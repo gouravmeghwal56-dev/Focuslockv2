@@ -181,7 +181,7 @@ class MainActivity : Activity() {
         cbStrict.setOnCheckedChangeListener { _, c -> Store.setStrict(this, c) }
         col.addView(cbStrict)
 
-        btnStart = smallBtn("START FOCUS") { onStart() }
+        btnStart = smallBtn("START FOCUS") { Startfocus() }
         col.addView(btnStart)
         lockables.add(btnStart)
         btnEnd = smallBtn("End session") {
@@ -230,7 +230,7 @@ class MainActivity : Activity() {
         }, cur / 60, cur % 60, true).show()
     }
 
-    private fun onStart() {
+    private fun Startfocus() {
         val h = etH.text.toString().toLongOrNull() ?: 0L
         val m = etM.text.toString().toLongOrNull() ?: 0L
         val total = h * 60L + m
