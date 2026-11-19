@@ -1,19 +1,11 @@
 package com.focuslock.app
 
 import android.accessibilityservice.AccessibilityServiceInfo
-import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.TimePickerDialog
-import android.content.Context
 import android.content.Intent
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.LinearGradient
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.RectF
-import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -48,509 +40,6 @@ import android.widget.Toast
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
-
-private val C_ORANGE = Color.parseColor("#FF6A0A")
-private val C_GRAY = Color.parseColor("#B5AEAC")
-private val C_TILE = Color.parseColor("#EBE6E6")
-private val C_DARK = Color.parseColor("#403B39")
-private val C_BG = Color.parseColor("#F6F3F3")
-private val C_TXT = Color.parseColor("#2E2927")
-private val C_CARD = Color.parseColor("#FCFAFA")
-private val C_LINE = Color.parseColor("#C9C2C0")
-
-// ---------- Custom views ----------
-
-/** Line/filled icons drawn on a 24x24 grid, so no drawable files are needed. */
-class IconView(ctx: Context, var kind: Int) : View(ctx) {
-    var tint: Int = C_DARK
-        set(v) {
-            field = v
-            invalidate()
-        }
-    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val path = Path()
-    private val rf = RectF()
-
-    companion object {
-        const val TIMER = 0
-        const val BAG = 1
-        const val GRID = 2
-        const val BARS = 3
-        const val MENU = 4
-        const val GEAR = 5
-        const val LOCK = 6
-        const val PLAY = 7
-        const val STOP = 8
-        const val RESET = 9
-        const val UP = 10
-        const val DOWN = 11
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val aw = (width - paddingLeft - paddingRight).toFloat()
-        val ah = (height - paddingTop - paddingBottom).toFloat()
-        val s = minOf(aw, ah)
-        val u = s / 24f
-        val ox = paddingLeft + (aw - s) / 2f
-        val oy = paddingTop + (ah - s) / 2f
-        p.color = tint
-        p.strokeWidth = 2f * u
-        p.strokeCap = Paint.Cap.ROUND
-        p.strokeJoin = Paint.Join.ROUND
-        p.style = Paint.Style.STROKE
-
-        fun x(v: Float) = ox + v * u
-        fun y(v: Float) = oy + v * u
-        fun rr(l: Float, t: Float, r: Float, b: Float, rad: Float) {
-            rf.set(x(l), y(t), x(r), y(b))
-            canvas.drawRoundRect(rf, rad * u, rad * u, p)
-        }
-
-        when (kind) {
-            TIMER -> {
-                canvas.drawCircle(x(12f), y(13.5f), 8f * u, p)
-                canvas.drawLine(x(12f), y(13.5f), x(12f), y(9.5f), p)
-                canvas.drawLine(x(9.5f), y(2.5f), x(14.5f), y(2.5f), p)
-            }
-            BAG -> {
-                p.style = Paint.Style.FILL
-                rr(4f, 9f, 8.5f, 20f, 1f)
-                rr(9.5f, 4f, 14.5f, 20f, 1f)
-                rr(15.5f, 9f, 20f, 20f, 1f)
-            }
-            GRID -> {
-                p.style = Paint.Style.FILL
-                rr(3f, 3f, 11f, 11f, 2f)
-                rr(13f, 3f, 21f, 11f, 2f)
-                rr(3f, 13f, 11f, 21f, 2f)
-                rr(13f, 13f, 21f, 21f, 2f)
-            }
-            BARS -> {
-                p.style = Paint.Style.FILL
-                rr(4f, 13f, 8f, 20f, 1.2f)
-                rr(10f, 8.5f, 14f, 20f, 1.2f)
-                rr(16f, 4f, 20f, 20f, 1.2f)
-            }
-            MENU -> {
-                p.strokeWidth = 1.9f * u
-                rr(3.5f, 3.5f, 10f, 10f, 2.5f)
-                rr(14f, 3.5f, 20.5f, 10f, 2.5f)
-                rr(3.5f, 14f, 10f, 20.5f, 2.5f)
-                rr(14f, 14f, 20.5f, 20.5f, 2.5f)
-            }
-            GEAR -> {
-                canvas.drawCircle(x(12f), y(12f), 6.3f * u, p)
-                for (i in 0 until 8) {
-                    val a = Math.toRadians(i * 45.0)
-                    val c = Math.cos(a).toFloat()
-                    val sn = Math.sin(a).toFloat()
-                    canvas.drawLine(
-                        x(12f + 8.3f * c), y(12f + 8.3f * sn),
-                        x(12f + 10.5f * c), y(12f + 10.5f * sn), p
-                    )
-                }
-                canvas.drawCircle(x(12f), y(12f), 2.4f * u, p)
-            }
-            LOCK -> {
-                p.strokeWidth = 2.6f * u
-                path.reset()
-                path.moveTo(x(7.5f), y(11f))
-                path.lineTo(x(7.5f), y(8f))
-                rf.set(x(7.5f), y(2.5f), x(16.5f), y(13.5f))
-                path.arcTo(rf, 180f, 180f)
-                path.lineTo(x(16.5f), y(11f))
-                canvas.drawPath(path, p)
-                p.style = Paint.Style.FILL
-                rr(4f, 10.5f, 20f, 22f, 3.5f)
-                p.color = Color.WHITE
-                canvas.drawCircle(x(12f), y(15.3f), 1.7f * u, p)
-                rr(11.2f, 15.5f, 12.8f, 19f, 0.8f)
-            }
-            PLAY -> {
-                p.style = Paint.Style.FILL_AND_STROKE
-                p.strokeWidth = 1.8f * u
-                path.reset()
-                path.moveTo(x(9f), y(6f))
-                path.lineTo(x(9f), y(18f))
-                path.lineTo(x(18f), y(12f))
-                path.close()
-                canvas.drawPath(path, p)
-            }
-            STOP -> {
-                p.style = Paint.Style.FILL
-                rr(6.5f, 6.5f, 17.5f, 17.5f, 2.5f)
-            }
-            RESET -> {
-                rf.set(x(4f), y(4f), x(20f), y(20f))
-                canvas.drawArc(rf, -40f, 290f, false, p)
-                p.style = Paint.Style.FILL
-                path.reset()
-                path.moveTo(x(8.6f), y(1.2f))
-                path.lineTo(x(8.6f), y(7.8f))
-                path.lineTo(x(13.6f), y(4.5f))
-                path.close()
-                canvas.drawPath(path, p)
-            }
-            UP -> {
-                p.strokeWidth = 2.2f * u
-                path.reset()
-                path.moveTo(x(6f), y(15f))
-                path.lineTo(x(12f), y(9f))
-                path.lineTo(x(18f), y(15f))
-                canvas.drawPath(path, p)
-            }
-            DOWN -> {
-                p.strokeWidth = 2.2f * u
-                path.reset()
-                path.moveTo(x(6f), y(9f))
-                path.lineTo(x(12f), y(15f))
-                path.lineTo(x(18f), y(9f))
-                canvas.drawPath(path, p)
-            }
-        }
-    }
-}
-
-class PixelClockView(ctx: Context) : View(ctx) {
-    private var text = "0000"
-    private var color = C_ORANGE
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val rect = RectF()
-    private val masks = arrayOf("abcdef", "bc", "abdeg", "abcdg", "bcfg", "acdfg", "acdefg", "abc", "abcdefg", "abcdfg")
-
-    fun show(totalMin: Int, c: Int) {
-        val h = (totalMin / 60).coerceIn(0, 99)
-        val m = totalMin % 60
-        text = String.format("%02d%02d", h, m)
-        color = c
-        invalidate()
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        paint.color = color
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val dw = minOf(w / 4.9f, h / 1.6f)
-        val dh = dw * 1.6f
-        val t = dw * 0.30f
-        val gap = dw * 0.10f
-        val colonW = dw * 0.32f
-        val total = dw * 4f + colonW + gap * 4f
-        var x = (w - total) / 2f
-        val y = (h - dh) / 2f
-        for (i in 0 until 4) {
-            if (i == 2) {
-                val cs = t * 0.9f
-                box(canvas, x + (colonW - cs) / 2f, y + dh * 0.28f, cs, cs, cs * 0.25f)
-                box(canvas, x + (colonW - cs) / 2f, y + dh * 0.64f, cs, cs, cs * 0.25f)
-                x += colonW + gap
-            }
-            drawDigit(canvas, text[i] - '0', x, y, dw, dh, t)
-            x += dw + gap
-        }
-    }
-
-    private fun box(c: Canvas, x: Float, y: Float, w: Float, h: Float, r: Float) {
-        rect.set(x, y, x + w, y + h)
-        c.drawRoundRect(rect, r, r, paint)
-    }
-
-    private fun drawDigit(c: Canvas, d: Int, x: Float, y: Float, dw: Float, dh: Float, t: Float) {
-        val m = masks[d]
-        val r = t * 0.28f
-        if ('a' in m) box(c, x, y, dw, t, r)
-        if ('b' in m) box(c, x + dw - t, y, t, dh / 2f + t / 2f, r)
-        if ('c' in m) box(c, x + dw - t, y + dh / 2f - t / 2f, t, dh / 2f + t / 2f, r)
-        if ('d' in m) box(c, x, y + dh - t, dw, t, r)
-        if ('e' in m) box(c, x, y + dh / 2f - t / 2f, t, dh / 2f + t / 2f, r)
-        if ('f' in m) box(c, x, y, t, dh / 2f + t / 2f, r)
-        if ('g' in m) box(c, x, y + (dh - t) / 2f, dw, t, r)
-    }
-}
-
-class DotsView(ctx: Context) : View(ctx) {
-    var total = 40
-    var filled = 0
-    var marks: BooleanArray? = null
-    private val paint = Paint()
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val cell = w / total
-        val s = minOf(cell * 0.62f, h)
-        val y = (h - s) / 2f
-        val mk = marks
-        for (i in 0 until total) {
-            val on = if (mk != null) (i < mk.size && mk[i]) else i < filled
-            paint.color = if (on) C_ORANGE else C_TILE
-            val x = i * cell + (cell - s) / 2f
-            canvas.drawRect(x, y, x + s, y + s, paint)
-        }
-    }
-}
-
-class BagsView(ctx: Context) : View(ctx) {
-    var active = 0
-    private val paint = Paint()
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val cw = w / 3f
-        for (i in 0..2) {
-            paint.color = if (i == active) C_ORANGE else Color.parseColor("#7A706D")
-            val bw = cw * 0.8f
-            val u = bw / 3f
-            val x0 = i * cw + cw * 0.1f
-            val base = h * 0.6f
-            canvas.drawRect(x0, base - u * 1.7f, x0 + u * 0.95f, base, paint)
-            canvas.drawRect(x0 + u, base - u * 2.3f, x0 + u * 1.95f, base, paint)
-            canvas.drawRect(x0 + u * 2f, base - u * 1.7f, x0 + u * 2.95f, base, paint)
-            paint.color = Color.WHITE
-            canvas.drawRect(x0 + u * 1.2f, base - u * 2.0f, x0 + u * 1.75f, base - u * 1.8f, paint)
-            paint.color = if (i == active) C_ORANGE else Color.parseColor("#7A706D")
-            val sq = u * 0.55f
-            for (k in 0..2) {
-                val sx = x0 + k * u * 1.05f + (u * 0.95f - sq) / 2f
-                canvas.drawRect(sx, base + u * 0.35f, sx + sq, base + u * 0.35f + sq, paint)
-            }
-        }
-    }
-}
-
-/** Sunrise + mountains + trees. progress 0..1 moves the sun up. */
-class SceneView(ctx: Context) : View(ctx) {
-    var progress = 0.3f
-        set(v) {
-            field = v.coerceIn(0f, 1f)
-            invalidate()
-        }
-    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val path = Path()
-    private val cFar = Color.parseColor("#DAD4D8")
-    private val cMid = Color.parseColor("#B8B1B8")
-    private val cNear = Color.parseColor("#8E8890")
-    private val cTree = Color.parseColor("#6E6870")
-    private val cSunTop = Color.parseColor("#FFB066")
-
-    private fun ridge(c: Canvas, color: Int, w: Float, h: Float, pts: FloatArray) {
-        path.reset()
-        path.moveTo(0f, h)
-        var i = 0
-        while (i < pts.size) {
-            path.lineTo(pts[i] * w, pts[i + 1] * h)
-            i += 2
-        }
-        path.lineTo(w, h)
-        path.close()
-        p.color = color
-        c.drawPath(path, p)
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val w = width.toFloat()
-        val h = height.toFloat()
-        p.style = Paint.Style.FILL
-
-        val r = h * 0.30f
-        val sx = w * 0.72f
-        val sy = h * (1.05f - 0.60f * progress)
-        p.shader = LinearGradient(sx, sy - r, sx, sy + r, cSunTop, C_ORANGE, Shader.TileMode.CLAMP)
-        canvas.drawCircle(sx, sy, r, p)
-        p.shader = null
-
-        ridge(canvas, cFar, w, h, floatArrayOf(0f, .62f, .12f, .45f, .25f, .60f, .38f, .40f, .55f, .62f, .70f, .50f, .85f, .60f, 1f, .48f))
-        ridge(canvas, cMid, w, h, floatArrayOf(0f, .78f, .15f, .60f, .30f, .75f, .50f, .55f, .68f, .78f, .85f, .62f, 1f, .74f))
-        ridge(canvas, cNear, w, h, floatArrayOf(0f, .88f, .20f, .78f, .40f, .90f, .60f, .80f, .80f, .90f, 1f, .82f))
-
-        p.color = cTree
-        for (i in 0 until 16) {
-            val tx = w * (i + 0.5f) / 16f
-            val th = h * (0.14f + 0.05f * ((i * 7) % 4))
-            val tw = th * 0.55f
-            val by = h * 0.97f
-            path.reset()
-            path.moveTo(tx - tw / 2f, by)
-            path.lineTo(tx, by - th)
-            path.lineTo(tx + tw / 2f, by)
-            path.close()
-            canvas.drawPath(path, p)
-        }
-    }
-}
-
-class RulerView(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
-    var onBlocked: (() -> Boolean)? = null
-    private val dens = ctx.resources.displayMetrics.density
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val rect = RectF()
-    private var value = 180f
-    private var reported = 180
-    private var lastY = 0f
-    private var ignore = false
-
-    fun setMinutes(m: Int) {
-        value = m.toFloat().coerceAtLeast(5f)
-        reported = m
-        invalidate()
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val sp = h / 22f
-        paint.style = Paint.Style.STROKE
-        paint.strokeCap = Paint.Cap.ROUND
-        paint.strokeWidth = dens * 1.5f
-        paint.color = C_LINE
-        rect.set(dens, dens, w - dens, h - dens)
-        canvas.drawRoundRect(rect, w * 0.3f, w * 0.3f, paint)
-
-        val k = value / 5f
-        val cy = h / 2f
-        paint.strokeWidth = dens * 1.6f
-        val first = Math.floor((k - 12f).toDouble()).toInt()
-        val last = Math.ceil((k + 12f).toDouble()).toInt()
-        for (i in first..last) {
-            if (i < 0 || i > 288) continue
-            val y = cy - (i - k) * sp
-            if (y < h * 0.07f || y > h * 0.93f) continue
-            val half = w * (if (i % 12 == 0) 0.26f else 0.17f)
-            canvas.drawLine(w / 2f - half, y, w / 2f + half, y, paint)
-        }
-        paint.color = C_ORANGE
-        paint.strokeWidth = dens * 4f
-        canvas.drawLine(w * 0.27f, cy, w * 0.73f, cy, paint)
-    }
-
-    override fun onTouchEvent(e: MotionEvent): Boolean {
-        when (e.action) {
-            MotionEvent.ACTION_DOWN -> {
-                parent?.requestDisallowInterceptTouchEvent(true)
-                lastY = e.y
-                ignore = onBlocked?.invoke() == true
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (!ignore) {
-                    val dy = e.y - lastY
-                    lastY = e.y
-                    value = (value - dy / (height / 22f) * 5f).coerceIn(5f, 1440f)
-                    invalidate()
-                    val snapped = (Math.round(value / 5f) * 5).coerceIn(5, 1440)
-                    if (snapped != reported) {
-                        reported = snapped
-                        onChange(snapped)
-                    }
-                }
-            }
-        }
-        return true
-    }
-}
-
-class SlideView(ctx: Context, private val onDone: () -> Unit) : View(ctx) {
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val path = Path()
-    private val rect = RectF()
-    private var knobX = 0f
-    private var dragging = false
-    private var back: ValueAnimator? = null
-
-    private fun snapBack() {
-        back?.cancel()
-        val a = ValueAnimator.ofFloat(knobX, 0f)
-        a.duration = 220
-        a.addUpdateListener {
-            knobX = it.animatedValue as Float
-            invalidate()
-        }
-        a.start()
-        back = a
-    }
-
-    override fun onDetachedFromWindow() {
-        back?.cancel()
-        super.onDetachedFromWindow()
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val kw = h * 1.25f
-        val r = h / 2f
-        val maxX = (w - kw).coerceAtLeast(1f)
-
-        paint.style = Paint.Style.FILL
-        paint.color = C_TILE
-        rect.set(0f, 0f, w, h)
-        canvas.drawRoundRect(rect, r, r, paint)
-
-        paint.color = C_TXT
-        paint.alpha = (255f * (1f - knobX / maxX)).toInt().coerceIn(30, 255)
-        paint.textSize = h * 0.30f
-        paint.textAlign = Paint.Align.CENTER
-        val base = h / 2f - (paint.ascent() + paint.descent()) / 2f
-        canvas.drawText("Slide to Start", (w + kw) / 2f, base, paint)
-        paint.alpha = 255
-
-        paint.color = C_DARK
-        rect.set(knobX, 0f, knobX + kw, h)
-        canvas.drawRoundRect(rect, r, r, paint)
-
-        val cx = knobX + kw / 2f
-        val cy = h / 2f
-        val s = h * 0.17f
-        paint.color = Color.WHITE
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = h * 0.07f
-        paint.strokeCap = Paint.Cap.ROUND
-        paint.strokeJoin = Paint.Join.ROUND
-        path.reset()
-        path.moveTo(cx - s * 0.5f, cy - s)
-        path.lineTo(cx + s * 0.5f, cy)
-        path.lineTo(cx - s * 0.5f, cy + s)
-        canvas.drawPath(path, paint)
-        paint.style = Paint.Style.FILL
-    }
-
-    override fun onTouchEvent(e: MotionEvent): Boolean {
-        val h = height.toFloat()
-        val kw = h * 1.25f
-        val maxX = width.toFloat() - kw
-        when (e.action) {
-            MotionEvent.ACTION_DOWN -> {
-                parent?.requestDisallowInterceptTouchEvent(true)
-                back?.cancel()
-                dragging = e.x <= knobX + kw * 1.3f
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (dragging) {
-                    knobX = (e.x - kw / 2f).coerceIn(0f, maxX)
-                    invalidate()
-                }
-            }
-            MotionEvent.ACTION_UP -> {
-                val done = dragging && knobX >= maxX * 0.9f
-                dragging = false
-                snapBack()
-                if (done) onDone()
-            }
-            MotionEvent.ACTION_CANCEL -> {
-                dragging = false
-                snapBack()
-            }
-        }
-        return true
-    }
-}
 
 // ---------- Activity ----------
 
@@ -1097,4 +586,353 @@ class MainActivity : Activity() {
         rl.setMinutes(durMin)
         ruler = rl
 
-     
+        val up = IconView(this, IconView.UP)
+        up.setOnClickListener { stepDur(5) }
+        val down = IconView(this, IconView.DOWN)
+        down.setOnClickListener { stepDur(-5) }
+        val stepBox = LinearLayout(this)
+        stepBox.orientation = LinearLayout.VERTICAL
+        val sbg = GradientDrawable()
+        sbg.setColor(Color.TRANSPARENT)
+        sbg.cornerRadius = dp(24).toFloat()
+        sbg.setStroke(dp(1), C_LINE)
+        stepBox.background = sbg
+        stepBox.addView(up, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        val divider = View(this)
+        divider.setBackgroundColor(C_LINE)
+        val dl = LinearLayout.LayoutParams(MATCH, dp(1))
+        dl.setMargins(dp(12), 0, dp(12), 0)
+        stepBox.addView(divider, dl)
+        stepBox.addView(down, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+        val rulerCol = LinearLayout(this)
+        rulerCol.orientation = LinearLayout.VERTICAL
+        val rlp = LinearLayout.LayoutParams(MATCH, 0, 1f)
+        rlp.bottomMargin = dp(8)
+        rulerCol.addView(rl, rlp)
+        rulerCol.addView(stepBox, LinearLayout.LayoutParams(MATCH, dp(84)))
+
+        val main = LinearLayout(this)
+        main.orientation = LinearLayout.HORIZONTAL
+        val tl = LinearLayout.LayoutParams(0, MATCH, 1f)
+        tl.rightMargin = dp(8)
+        main.addView(tilesCol, tl)
+        main.addView(rulerCol, LinearLayout.LayoutParams(dp(64), MATCH))
+        col.addView(main, lpV())
+
+        val strictTile = tile("STRICT\n" + if (Store.strict(this)) "ON" else "OFF", Store.strict(this)) { toggleStrict() }
+        val modeTile = tile("MODE\n" + if (Store.allowMode(this)) "BAG (allow only)" else "BLOCK", Store.allowMode(this)) { toggleMode() }
+        strictTile.textSize = 14f
+        modeTile.textSize = 14f
+        col.addView(hrow(strictTile, modeTile), lpV(dp(60)))
+
+        if (!Store.active(this)) {
+            col.addView(SlideView(this) { startFocus() }, lpV(dp(64)))
+        } else if (Store.sessionOn(this) && !Store.strict(this)) {
+            col.addView(tile("End session", false) {
+                Store.stopSession(this)
+                render()
+                updateLeft()
+            }, lpV(dp(64)))
+        } else if (Store.strict(this)) {
+            col.addView(tile("STRICT ON  \u00B7  locked until the timer ends", false) {}, lpV(dp(64)))
+        } else {
+            col.addView(tile("Routine running (turn it off from the Routines tab)", false) {}, lpV(dp(64)))
+        }
+        return col
+    }
+
+    private fun startFocus() {
+        if (Store.selected(this).isEmpty()) {
+            toast("Add apps in the Bags tab first")
+            return
+        }
+        if (!accEnabled()) {
+            toast("Turn Accessibility ON first")
+            return
+        }
+        val go = {
+            Store.startSession(this, durMin.toLong())
+            render()
+            updateLeft()
+        }
+        if (Store.strict(this)) {
+            AlertDialog.Builder(this)
+                .setTitle("Strict mode")
+                .setMessage("You won't be able to end for ${durMin / 60}h ${durMin % 60}m and Settings will be blocked. Sure?")
+                .setPositiveButton("Yes") { _, _ -> go() }
+                .setNegativeButton("No", null)
+                .show()
+        } else {
+            go()
+        }
+    }
+
+    // ---------- Page 1: Bags ----------
+    private fun bagTab(i: Int): TextView {
+        val sel = bagSel == i
+        val t = tile("Bag ${i + 1}", false) {
+            if (locked()) {
+                lockedToast()
+            } else {
+                bagSel = i
+                Store.setActiveBag(this, i)
+                render()
+                updateLeft()
+            }
+        }
+        if (sel) {
+            t.setTextColor(Color.WHITE)
+            t.background = rounded(C_ORANGE, 26)
+        }
+        return t
+    }
+
+    private fun bagsPage(): View {
+        val col = vbox()
+        col.addView(hrow(bagTab(0), bagTab(1), bagTab(2)), lpV(dp(52)))
+        val list = Store.bag(this, bagSel).toList().sorted()
+        val cells = ArrayList<View>()
+        for (i in 0 until 6) {
+            val cell = FrameLayout(this)
+            cell.background = rounded(C_TILE, 20)
+            if (i == 5 && list.size > 6) {
+                val tv = TextView(this)
+                tv.text = "+${list.size - 5}"
+                tv.textSize = 22f
+                tv.gravity = Gravity.CENTER
+                tv.setTextColor(C_TXT)
+                cell.addView(tv, FrameLayout.LayoutParams(MATCH, MATCH))
+            } else if (i < list.size) {
+                val iv = ImageView(this)
+                iv.setImageDrawable(icon(list[i]))
+                val lp = FrameLayout.LayoutParams(dp(44), dp(44))
+                lp.gravity = Gravity.CENTER
+                cell.addView(iv, lp)
+            }
+            cell.setOnClickListener { showPicker() }
+            cells.add(cell)
+        }
+        col.addView(hrow(cells[0], cells[1], cells[2]), lpV())
+        col.addView(hrow(cells[3], cells[4], cells[5]), lpV())
+        col.addView(hrow(
+            tile("Add / remove apps", true) { showPicker() },
+            tile("Clear bag", false) {
+                if (locked()) {
+                    lockedToast()
+                } else {
+                    Store.setBag(this, bagSel, emptySet())
+                    render()
+                    updateLeft()
+                }
+            }
+        ), lpV(dp(80)))
+        return col
+    }
+
+    private fun showPicker() {
+        if (locked()) {
+            lockedToast()
+            return
+        }
+        val set = HashSet(Store.bag(this, bagSel))
+        var shown: List<App> = allApps
+
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(dp(12), dp(8), dp(12), dp(0))
+        val search = EditText(this)
+        search.hint = "Search app"
+        search.isSingleLine = true
+        col.addView(search)
+
+        val lv = ListView(this)
+        val ad = object : BaseAdapter() {
+            override fun getCount() = shown.size
+            override fun getItem(i: Int): Any = shown[i]
+            override fun getItemId(i: Int) = i.toLong()
+            override fun getView(i: Int, v: View?, parent: ViewGroup?): View {
+                val a = shown[i]
+                val row = (v as? LinearLayout) ?: LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(8), dp(6), dp(8), dp(6))
+                    val iv = ImageView(this@MainActivity)
+                    addView(iv, LinearLayout.LayoutParams(dp(40), dp(40)))
+                    val tv = TextView(this@MainActivity)
+                    tv.textSize = 16f
+                    tv.setPadding(dp(12), 0, dp(8), 0)
+                    addView(tv, LinearLayout.LayoutParams(0, WRAP, 1f))
+                    val cb = CheckBox(this@MainActivity)
+                    cb.isClickable = false
+                    cb.isFocusable = false
+                    addView(cb)
+                }
+                (row.getChildAt(0) as ImageView).setImageDrawable(icon(a.pkg))
+                (row.getChildAt(1) as TextView).text = a.label
+                (row.getChildAt(2) as CheckBox).isChecked = a.pkg in set
+                return row
+            }
+        }
+        lv.adapter = ad
+        lv.setOnItemClickListener { _, _, i, _ ->
+            val p = shown[i].pkg
+            if (!set.remove(p)) set.add(p)
+            ad.notifyDataSetChanged()
+        }
+        search.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                val q = s?.toString() ?: ""
+                shown = if (q.isBlank()) allApps else allApps.filter { it.label.contains(q, ignoreCase = true) }
+                ad.notifyDataSetChanged()
+            }
+            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+        })
+
+        val bar = LinearLayout(this)
+        bar.orientation = LinearLayout.HORIZONTAL
+        val bAll = Button(this)
+        bAll.text = "Select all shown"
+        bAll.setOnClickListener {
+            shown.forEach { set.add(it.pkg) }
+            ad.notifyDataSetChanged()
+        }
+        val bNone = Button(this)
+        bNone.text = "Clear all"
+        bNone.setOnClickListener {
+            set.clear()
+            ad.notifyDataSetChanged()
+        }
+        bar.addView(bAll, LinearLayout.LayoutParams(0, WRAP, 1f))
+        bar.addView(bNone, LinearLayout.LayoutParams(0, WRAP, 1f))
+        col.addView(bar)
+        col.addView(lv, LinearLayout.LayoutParams(MATCH, dp(360)))
+
+        AlertDialog.Builder(this)
+            .setTitle("Bag ${bagSel + 1} apps")
+            .setView(col)
+            .setPositiveButton("Save") { _, _ ->
+                Store.setBag(this, bagSel, set)
+                render()
+                updateLeft()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // ---------- Page 2: Routines ----------
+    private fun rtTab(i: Int): TextView {
+        val t = tile("ROUTINE ${i + 1}\n" + fmt(Store.rtStart(this, i)), false) {
+            rtSel = i
+            render()
+            updateLeft()
+        }
+        if (rtSel == i) {
+            t.setTextColor(Color.WHITE)
+            t.background = rounded(C_DARK, 20)
+        }
+        return t
+    }
+
+    private fun pickTime(start: Boolean) {
+        if (locked()) {
+            lockedToast()
+            return
+        }
+        val cur = if (start) Store.rtStart(this, rtSel) else Store.rtEnd(this, rtSel)
+        TimePickerDialog(this, { _, h, m ->
+            if (start) Store.setRtStart(this, rtSel, h * 60 + m) else Store.setRtEnd(this, rtSel, h * 60 + m)
+            render()
+            updateLeft()
+        }, cur / 60, cur % 60, true).show()
+    }
+
+    private fun routinesPage(): View {
+        val col = vbox()
+        col.addView(hrow(rtTab(0), rtTab(1), rtTab(2)), lpV(dp(72)))
+
+        val mask = Store.rtDays(this, rtSel)
+        val names = arrayOf("S", "M", "T", "W", "T", "F", "S")
+        val days = ArrayList<View>()
+        for (d in 0..6) {
+            val on = ((mask shr d) and 1) == 1
+            val t = TextView(this)
+            t.text = names[d]
+            t.gravity = Gravity.CENTER
+            t.textSize = 18f
+            t.setTextColor(if (on) Color.WHITE else C_TXT)
+            t.background = rounded(if (on) C_ORANGE else C_TILE, 16)
+            t.setOnClickListener {
+                if (locked()) {
+                    lockedToast()
+                } else {
+                    Store.setRtDays(this, rtSel, mask xor (1 shl d))
+                    render()
+                    updateLeft()
+                }
+            }
+            days.add(t)
+        }
+        col.addView(hrow(*days.toTypedArray()), lpV())
+
+        col.addView(hrow(
+            tile("START\n" + fmt(Store.rtStart(this, rtSel)), false) { pickTime(true) },
+            tile("END\n" + fmt(Store.rtEnd(this, rtSel)), false) { pickTime(false) }
+        ), lpV())
+
+        val on = Store.rtOn(this, rtSel)
+        col.addView(tile("ROUTINE " + if (on) "ON" else "OFF", on) {
+            if (locked()) {
+                lockedToast()
+            } else {
+                Store.setRtOn(this, rtSel, !on)
+                render()
+                updateLeft()
+            }
+        }, lpV(dp(72)))
+        return col
+    }
+
+    // ---------- Page 3: Stats ----------
+    private fun statsPage(): View {
+        val col = vbox()
+        val cal = Calendar.getInstance()
+        val today = Store.dayMinutes(this, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH))
+        val month = monthTotal()
+        val label = SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(cal.time).uppercase()
+        col.addView(tile(label, false) {}, lpV(dp(64)))
+        col.addView(tile("TODAY\n$today min", false) {}, lpV())
+        col.addView(tile("THIS MONTH\n${month / 60}h ${month % 60}m", true) {}, lpV())
+        col.addView(tile("Minutes are counted when a timer starts", false) {}, lpV(dp(64)))
+        return col
+    }
+
+    // ---------- Lifecycle ----------
+    private val tick = object : Runnable {
+        override fun run() {
+            val r = Store.active(this@MainActivity)
+            if (r != lastRunning) {
+                lastRunning = r
+                render()
+            }
+            updateLeft()
+            ui.postDelayed(this, 1000)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        lastRunning = Store.active(this)
+        render()
+        updateLeft()
+        styleRail()
+        ui.removeCallbacks(tick)
+        ui.postDelayed(tick, 1000)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        ui.removeCallbacks(tick)
+    }
+}
