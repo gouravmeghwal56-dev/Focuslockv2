@@ -1,6 +1,7 @@
 package com.focuslock.app
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.TimePickerDialog
@@ -8,8 +9,11 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -19,7 +23,13 @@ import android.os.Looper
 import android.provider.Settings
 import android.text.Editable
 import android.text.InputType
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.SpannableStringBuilder
 import android.text.TextWatcher
+import android.text.style.AbsoluteSizeSpan
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -39,19 +49,174 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-private val C_ORANGE = Color.parseColor("#F55414")
-private val C_GRAY = Color.parseColor("#ABABAB")
-private val C_TILE = Color.parseColor("#DCDCDC")
-private val C_DARK = Color.parseColor("#4D4848")
-private val C_BG = Color.parseColor("#E0E0E0")
-private val C_TXT = Color.parseColor("#4A4A4A")
+private val C_ORANGE = Color.parseColor("#FF6A0A")
+private val C_GRAY = Color.parseColor("#B5AEAC")
+private val C_TILE = Color.parseColor("#EBE6E6")
+private val C_DARK = Color.parseColor("#403B39")
+private val C_BG = Color.parseColor("#F6F3F3")
+private val C_TXT = Color.parseColor("#2E2927")
+private val C_CARD = Color.parseColor("#FCFAFA")
+private val C_LINE = Color.parseColor("#C9C2C0")
 
 // ---------- Custom views ----------
+
+/** Line/filled icons drawn on a 24x24 grid, so no drawable files are needed. */
+class IconView(ctx: Context, var kind: Int) : View(ctx) {
+    var tint: Int = C_DARK
+        set(v) {
+            field = v
+            invalidate()
+        }
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val path = Path()
+    private val rf = RectF()
+
+    companion object {
+        const val TIMER = 0
+        const val BAG = 1
+        const val GRID = 2
+        const val BARS = 3
+        const val MENU = 4
+        const val GEAR = 5
+        const val LOCK = 6
+        const val PLAY = 7
+        const val STOP = 8
+        const val RESET = 9
+        const val UP = 10
+        const val DOWN = 11
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val aw = (width - paddingLeft - paddingRight).toFloat()
+        val ah = (height - paddingTop - paddingBottom).toFloat()
+        val s = minOf(aw, ah)
+        val u = s / 24f
+        val ox = paddingLeft + (aw - s) / 2f
+        val oy = paddingTop + (ah - s) / 2f
+        p.color = tint
+        p.strokeWidth = 2f * u
+        p.strokeCap = Paint.Cap.ROUND
+        p.strokeJoin = Paint.Join.ROUND
+        p.style = Paint.Style.STROKE
+
+        fun x(v: Float) = ox + v * u
+        fun y(v: Float) = oy + v * u
+        fun rr(l: Float, t: Float, r: Float, b: Float, rad: Float) {
+            rf.set(x(l), y(t), x(r), y(b))
+            canvas.drawRoundRect(rf, rad * u, rad * u, p)
+        }
+
+        when (kind) {
+            TIMER -> {
+                canvas.drawCircle(x(12f), y(13.5f), 8f * u, p)
+                canvas.drawLine(x(12f), y(13.5f), x(12f), y(9.5f), p)
+                canvas.drawLine(x(9.5f), y(2.5f), x(14.5f), y(2.5f), p)
+            }
+            BAG -> {
+                p.style = Paint.Style.FILL
+                rr(4f, 9f, 8.5f, 20f, 1f)
+                rr(9.5f, 4f, 14.5f, 20f, 1f)
+                rr(15.5f, 9f, 20f, 20f, 1f)
+            }
+            GRID -> {
+                p.style = Paint.Style.FILL
+                rr(3f, 3f, 11f, 11f, 2f)
+                rr(13f, 3f, 21f, 11f, 2f)
+                rr(3f, 13f, 11f, 21f, 2f)
+                rr(13f, 13f, 21f, 21f, 2f)
+            }
+            BARS -> {
+                p.style = Paint.Style.FILL
+                rr(4f, 13f, 8f, 20f, 1.2f)
+                rr(10f, 8.5f, 14f, 20f, 1.2f)
+                rr(16f, 4f, 20f, 20f, 1.2f)
+            }
+            MENU -> {
+                p.strokeWidth = 1.9f * u
+                rr(3.5f, 3.5f, 10f, 10f, 2.5f)
+                rr(14f, 3.5f, 20.5f, 10f, 2.5f)
+                rr(3.5f, 14f, 10f, 20.5f, 2.5f)
+                rr(14f, 14f, 20.5f, 20.5f, 2.5f)
+            }
+            GEAR -> {
+                canvas.drawCircle(x(12f), y(12f), 6.3f * u, p)
+                for (i in 0 until 8) {
+                    val a = Math.toRadians(i * 45.0)
+                    val c = Math.cos(a).toFloat()
+                    val sn = Math.sin(a).toFloat()
+                    canvas.drawLine(
+                        x(12f + 8.3f * c), y(12f + 8.3f * sn),
+                        x(12f + 10.5f * c), y(12f + 10.5f * sn), p
+                    )
+                }
+                canvas.drawCircle(x(12f), y(12f), 2.4f * u, p)
+            }
+            LOCK -> {
+                p.strokeWidth = 2.6f * u
+                path.reset()
+                path.moveTo(x(7.5f), y(11f))
+                path.lineTo(x(7.5f), y(8f))
+                rf.set(x(7.5f), y(2.5f), x(16.5f), y(13.5f))
+                path.arcTo(rf, 180f, 180f)
+                path.lineTo(x(16.5f), y(11f))
+                canvas.drawPath(path, p)
+                p.style = Paint.Style.FILL
+                rr(4f, 10.5f, 20f, 22f, 3.5f)
+                p.color = Color.WHITE
+                canvas.drawCircle(x(12f), y(15.3f), 1.7f * u, p)
+                rr(11.2f, 15.5f, 12.8f, 19f, 0.8f)
+            }
+            PLAY -> {
+                p.style = Paint.Style.FILL_AND_STROKE
+                p.strokeWidth = 1.8f * u
+                path.reset()
+                path.moveTo(x(9f), y(6f))
+                path.lineTo(x(9f), y(18f))
+                path.lineTo(x(18f), y(12f))
+                path.close()
+                canvas.drawPath(path, p)
+            }
+            STOP -> {
+                p.style = Paint.Style.FILL
+                rr(6.5f, 6.5f, 17.5f, 17.5f, 2.5f)
+            }
+            RESET -> {
+                rf.set(x(4f), y(4f), x(20f), y(20f))
+                canvas.drawArc(rf, -40f, 290f, false, p)
+                p.style = Paint.Style.FILL
+                path.reset()
+                path.moveTo(x(8.6f), y(1.2f))
+                path.lineTo(x(8.6f), y(7.8f))
+                path.lineTo(x(13.6f), y(4.5f))
+                path.close()
+                canvas.drawPath(path, p)
+            }
+            UP -> {
+                p.strokeWidth = 2.2f * u
+                path.reset()
+                path.moveTo(x(6f), y(15f))
+                path.lineTo(x(12f), y(9f))
+                path.lineTo(x(18f), y(15f))
+                canvas.drawPath(path, p)
+            }
+            DOWN -> {
+                p.strokeWidth = 2.2f * u
+                path.reset()
+                path.moveTo(x(6f), y(9f))
+                path.lineTo(x(12f), y(15f))
+                path.lineTo(x(18f), y(9f))
+                canvas.drawPath(path, p)
+            }
+        }
+    }
+}
 
 class PixelClockView(ctx: Context) : View(ctx) {
     private var text = "0000"
     private var color = C_ORANGE
-    private val paint = Paint()
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rect = RectF()
     private val masks = arrayOf("abcdef", "bc", "abdeg", "abcdg", "bcfg", "acdfg", "acdefg", "abc", "abcdefg", "abcdfg")
 
     fun show(totalMin: Int, c: Int) {
@@ -67,18 +232,19 @@ class PixelClockView(ctx: Context) : View(ctx) {
         paint.color = color
         val w = width.toFloat()
         val h = height.toFloat()
-        val dw = minOf(w / 4.83f, h / 1.7f)
-        val dh = dw * 1.7f
-        val t = dw * 0.22f
-        val gap = dw * 0.12f
-        val colonW = dw * 0.35f
+        val dw = minOf(w / 4.9f, h / 1.6f)
+        val dh = dw * 1.6f
+        val t = dw * 0.30f
+        val gap = dw * 0.10f
+        val colonW = dw * 0.32f
         val total = dw * 4f + colonW + gap * 4f
         var x = (w - total) / 2f
         val y = (h - dh) / 2f
         for (i in 0 until 4) {
             if (i == 2) {
-                canvas.drawRect(x + (colonW - t) / 2f, y + dh * 0.28f, x + (colonW + t) / 2f, y + dh * 0.28f + t, paint)
-                canvas.drawRect(x + (colonW - t) / 2f, y + dh * 0.64f, x + (colonW + t) / 2f, y + dh * 0.64f + t, paint)
+                val cs = t * 0.9f
+                box(canvas, x + (colonW - cs) / 2f, y + dh * 0.28f, cs, cs, cs * 0.25f)
+                box(canvas, x + (colonW - cs) / 2f, y + dh * 0.64f, cs, cs, cs * 0.25f)
                 x += colonW + gap
             }
             drawDigit(canvas, text[i] - '0', x, y, dw, dh, t)
@@ -86,15 +252,21 @@ class PixelClockView(ctx: Context) : View(ctx) {
         }
     }
 
+    private fun box(c: Canvas, x: Float, y: Float, w: Float, h: Float, r: Float) {
+        rect.set(x, y, x + w, y + h)
+        c.drawRoundRect(rect, r, r, paint)
+    }
+
     private fun drawDigit(c: Canvas, d: Int, x: Float, y: Float, dw: Float, dh: Float, t: Float) {
         val m = masks[d]
-        if ('a' in m) c.drawRect(x, y, x + dw, y + t, paint)
-        if ('b' in m) c.drawRect(x + dw - t, y, x + dw, y + dh / 2f, paint)
-        if ('c' in m) c.drawRect(x + dw - t, y + dh / 2f, x + dw, y + dh, paint)
-        if ('d' in m) c.drawRect(x, y + dh - t, x + dw, y + dh, paint)
-        if ('e' in m) c.drawRect(x, y + dh / 2f, x + t, y + dh, paint)
-        if ('f' in m) c.drawRect(x, y, x + t, y + dh / 2f, paint)
-        if ('g' in m) c.drawRect(x, y + (dh - t) / 2f, x + dw, y + (dh + t) / 2f, paint)
+        val r = t * 0.28f
+        if ('a' in m) box(c, x, y, dw, t, r)
+        if ('b' in m) box(c, x + dw - t, y, t, dh / 2f + t / 2f, r)
+        if ('c' in m) box(c, x + dw - t, y + dh / 2f - t / 2f, t, dh / 2f + t / 2f, r)
+        if ('d' in m) box(c, x, y + dh - t, dw, t, r)
+        if ('e' in m) box(c, x, y + dh / 2f - t / 2f, t, dh / 2f + t / 2f, r)
+        if ('f' in m) box(c, x, y, t, dh / 2f + t / 2f, r)
+        if ('g' in m) box(c, x, y + (dh - t) / 2f, dw, t, r)
     }
 }
 
@@ -151,55 +323,229 @@ class BagsView(ctx: Context) : View(ctx) {
     }
 }
 
-class SlideView(ctx: Context, private val onDone: () -> Unit) : View(ctx) {
-    private val paint = Paint()
-    private var knobX = 0f
-    private var dragging = false
+/** Sunrise + mountains + trees. progress 0..1 moves the sun up. */
+class SceneView(ctx: Context) : View(ctx) {
+    var progress = 0.3f
+        set(v) {
+            field = v.coerceIn(0f, 1f)
+            invalidate()
+        }
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val path = Path()
+    private val cFar = Color.parseColor("#DAD4D8")
+    private val cMid = Color.parseColor("#B8B1B8")
+    private val cNear = Color.parseColor("#8E8890")
+    private val cTree = Color.parseColor("#6E6870")
+    private val cSunTop = Color.parseColor("#FFB066")
+
+    private fun ridge(c: Canvas, color: Int, w: Float, h: Float, pts: FloatArray) {
+        path.reset()
+        path.moveTo(0f, h)
+        var i = 0
+        while (i < pts.size) {
+            path.lineTo(pts[i] * w, pts[i + 1] * h)
+            i += 2
+        }
+        path.lineTo(w, h)
+        path.close()
+        p.color = color
+        c.drawPath(path, p)
+    }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val w = width.toFloat()
         val h = height.toFloat()
-        val r = h * 0.3f
+        p.style = Paint.Style.FILL
+
+        val r = h * 0.30f
+        val sx = w * 0.72f
+        val sy = h * (1.05f - 0.60f * progress)
+        p.shader = LinearGradient(sx, sy - r, sx, sy + r, cSunTop, C_ORANGE, Shader.TileMode.CLAMP)
+        canvas.drawCircle(sx, sy, r, p)
+        p.shader = null
+
+        ridge(canvas, cFar, w, h, floatArrayOf(0f, .62f, .12f, .45f, .25f, .60f, .38f, .40f, .55f, .62f, .70f, .50f, .85f, .60f, 1f, .48f))
+        ridge(canvas, cMid, w, h, floatArrayOf(0f, .78f, .15f, .60f, .30f, .75f, .50f, .55f, .68f, .78f, .85f, .62f, 1f, .74f))
+        ridge(canvas, cNear, w, h, floatArrayOf(0f, .88f, .20f, .78f, .40f, .90f, .60f, .80f, .80f, .90f, 1f, .82f))
+
+        p.color = cTree
+        for (i in 0 until 16) {
+            val tx = w * (i + 0.5f) / 16f
+            val th = h * (0.14f + 0.05f * ((i * 7) % 4))
+            val tw = th * 0.55f
+            val by = h * 0.97f
+            path.reset()
+            path.moveTo(tx - tw / 2f, by)
+            path.lineTo(tx, by - th)
+            path.lineTo(tx + tw / 2f, by)
+            path.close()
+            canvas.drawPath(path, p)
+        }
+    }
+}
+
+class RulerView(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
+    var onBlocked: (() -> Boolean)? = null
+    private val dens = ctx.resources.displayMetrics.density
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rect = RectF()
+    private var value = 180f
+    private var reported = 180
+    private var lastY = 0f
+    private var ignore = false
+
+    fun setMinutes(m: Int) {
+        value = m.toFloat().coerceAtLeast(5f)
+        reported = m
+        invalidate()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val sp = h / 22f
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = dens * 1.5f
+        paint.color = C_LINE
+        rect.set(dens, dens, w - dens, h - dens)
+        canvas.drawRoundRect(rect, w * 0.3f, w * 0.3f, paint)
+
+        val k = value / 5f
+        val cy = h / 2f
+        paint.strokeWidth = dens * 1.6f
+        val first = Math.floor((k - 12f).toDouble()).toInt()
+        val last = Math.ceil((k + 12f).toDouble()).toInt()
+        for (i in first..last) {
+            if (i < 0 || i > 288) continue
+            val y = cy - (i - k) * sp
+            if (y < h * 0.07f || y > h * 0.93f) continue
+            val half = w * (if (i % 12 == 0) 0.26f else 0.17f)
+            canvas.drawLine(w / 2f - half, y, w / 2f + half, y, paint)
+        }
+        paint.color = C_ORANGE
+        paint.strokeWidth = dens * 4f
+        canvas.drawLine(w * 0.27f, cy, w * 0.73f, cy, paint)
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.action) {
+            MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                lastY = e.y
+                ignore = onBlocked?.invoke() == true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!ignore) {
+                    val dy = e.y - lastY
+                    lastY = e.y
+                    value = (value - dy / (height / 22f) * 5f).coerceIn(5f, 1440f)
+                    invalidate()
+                    val snapped = (Math.round(value / 5f) * 5).coerceIn(5, 1440)
+                    if (snapped != reported) {
+                        reported = snapped
+                        onChange(snapped)
+                    }
+                }
+            }
+        }
+        return true
+    }
+}
+
+class SlideView(ctx: Context, private val onDone: () -> Unit) : View(ctx) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val path = Path()
+    private val rect = RectF()
+    private var knobX = 0f
+    private var dragging = false
+    private var back: ValueAnimator? = null
+
+    private fun snapBack() {
+        back?.cancel()
+        val a = ValueAnimator.ofFloat(knobX, 0f)
+        a.duration = 220
+        a.addUpdateListener {
+            knobX = it.animatedValue as Float
+            invalidate()
+        }
+        a.start()
+        back = a
+    }
+
+    override fun onDetachedFromWindow() {
+        back?.cancel()
+        super.onDetachedFromWindow()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val kw = h * 1.25f
+        val r = h / 2f
+        val maxX = (w - kw).coerceAtLeast(1f)
+
+        paint.style = Paint.Style.FILL
         paint.color = C_TILE
-        canvas.drawRoundRect(RectF(0f, 0f, w, h), r, r, paint)
-        paint.color = C_GRAY
-        paint.textSize = h * 0.26f
+        rect.set(0f, 0f, w, h)
+        canvas.drawRoundRect(rect, r, r, paint)
+
+        paint.color = C_TXT
+        paint.alpha = (255f * (1f - knobX / maxX)).toInt().coerceIn(30, 255)
+        paint.textSize = h * 0.30f
         paint.textAlign = Paint.Align.CENTER
-        paint.isAntiAlias = true
         val base = h / 2f - (paint.ascent() + paint.descent()) / 2f
-        canvas.drawText("SLIDE TO START  >>", w / 2f + h / 2f, base, paint)
+        canvas.drawText("Slide to Start", (w + kw) / 2f, base, paint)
+        paint.alpha = 255
+
         paint.color = C_DARK
-        canvas.drawRoundRect(RectF(knobX, 0f, knobX + h, h), r, r, paint)
+        rect.set(knobX, 0f, knobX + kw, h)
+        canvas.drawRoundRect(rect, r, r, paint)
+
+        val cx = knobX + kw / 2f
+        val cy = h / 2f
+        val s = h * 0.17f
         paint.color = Color.WHITE
-        canvas.drawText(">", knobX + h / 2f, base, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = h * 0.07f
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeJoin = Paint.Join.ROUND
+        path.reset()
+        path.moveTo(cx - s * 0.5f, cy - s)
+        path.lineTo(cx + s * 0.5f, cy)
+        path.lineTo(cx - s * 0.5f, cy + s)
+        canvas.drawPath(path, paint)
+        paint.style = Paint.Style.FILL
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         val h = height.toFloat()
-        val maxX = width.toFloat() - h
+        val kw = h * 1.25f
+        val maxX = width.toFloat() - kw
         when (e.action) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
-                dragging = e.x <= knobX + h * 1.3f
+                back?.cancel()
+                dragging = e.x <= knobX + kw * 1.3f
             }
             MotionEvent.ACTION_MOVE -> {
                 if (dragging) {
-                    knobX = (e.x - h / 2f).coerceIn(0f, maxX)
+                    knobX = (e.x - kw / 2f).coerceIn(0f, maxX)
                     invalidate()
                 }
             }
             MotionEvent.ACTION_UP -> {
                 val done = dragging && knobX >= maxX * 0.9f
-                knobX = 0f
                 dragging = false
-                invalidate()
+                snapBack()
                 if (done) onDone()
             }
             MotionEvent.ACTION_CANCEL -> {
-                knobX = 0f
                 dragging = false
-                invalidate()
+                snapBack()
             }
         }
         return true
@@ -227,13 +573,27 @@ class MainActivity : Activity() {
     private lateinit var pc: PixelClockView
     private lateinit var dots: DotsView
     private lateinit var bagsView: BagsView
+    private lateinit var scene: SceneView
     private lateinit var caption: TextView
-    private val railBtns = ArrayList<TextView>()
+    private lateinit var pillText: TextView
+    private lateinit var pillIcon: IconView
+    private lateinit var controls: LinearLayout
+    private val railBtns = ArrayList<IconView>()
+    private val tabKinds = intArrayOf(IconView.TIMER, IconView.BAG, IconView.GRID, IconView.BARS)
+    private val tabNames = arrayOf("Focus Session", "Bags", "Routines", "Stats")
+
+    // timer page refs (so tiles can update without rebuilding the page while dragging)
+    private var t15: TextView? = null
+    private var t45: TextView? = null
+    private var t180: TextView? = null
+    private var tCustom: TextView? = null
+    private var ruler: RulerView? = null
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_LONG).show()
     private fun fmt(min: Int) = String.format("%02d:%02d", min / 60, min % 60)
     private fun locked() = Store.active(this) && Store.strict(this)
+    private fun lockedToast() = toast("Strict mode is ON, can't change right now")
 
     private fun rounded(color: Int, r: Int): GradientDrawable {
         val g = GradientDrawable()
@@ -242,15 +602,45 @@ class MainActivity : Activity() {
         return g
     }
 
-    private fun tile(text: String, selected: Boolean, onClick: () -> Unit): TextView {
+    private fun oval(color: Int): GradientDrawable {
+        val g = GradientDrawable()
+        g.shape = GradientDrawable.OVAL
+        g.setColor(color)
+        return g
+    }
+
+    private fun twoLine(top: String, bottom: String): CharSequence {
+        val sb = SpannableStringBuilder()
+        sb.append(top)
+        sb.setSpan(AbsoluteSizeSpan(34, true), 0, top.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        sb.setSpan(StyleSpan(Typeface.BOLD), 0, top.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        sb.append("\n")
+        sb.append(bottom)
+        return sb
+    }
+
+    private fun tile(text: CharSequence, selected: Boolean, onClick: () -> Unit): TextView {
         val t = TextView(this)
         t.text = text
         t.gravity = Gravity.CENTER
-        t.textSize = 17f
+        t.textSize = 16f
         t.setTextColor(if (selected) Color.WHITE else C_TXT)
-        t.background = rounded(if (selected) C_DARK else C_TILE, 16)
+        t.background = rounded(if (selected) C_DARK else C_TILE, 20)
         t.setOnClickListener { onClick() }
+        t.setOnTouchListener { v, ev ->
+            when (ev.action) {
+                MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(90).start()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
+            }
+            false
+        }
         return t
+    }
+
+    private fun styleTile(t: TextView?, sel: Boolean) {
+        if (t == null) return
+        t.setTextColor(if (sel) Color.WHITE else C_TXT)
+        t.background = rounded(if (sel) C_DARK else C_TILE, 20)
     }
 
     private fun hrow(vararg v: View): LinearLayout {
@@ -267,13 +657,13 @@ class MainActivity : Activity() {
     private fun vbox(): LinearLayout {
         val c = LinearLayout(this)
         c.orientation = LinearLayout.VERTICAL
-        c.setPadding(dp(4), dp(4), dp(4), dp(4))
+        c.setPadding(dp(2), dp(2), dp(2), dp(2))
         return c
     }
 
     private fun lpV(h: Int = 0): LinearLayout.LayoutParams {
         val lp = if (h == 0) LinearLayout.LayoutParams(MATCH, 0, 1f) else LinearLayout.LayoutParams(MATCH, h)
-        lp.setMargins(0, dp(4), 0, dp(4))
+        lp.setMargins(0, dp(5), 0, dp(5))
         return lp
     }
 
@@ -306,17 +696,9 @@ class MainActivity : Activity() {
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
         root.setBackgroundColor(C_BG)
-        root.setPadding(dp(12), dp(30), dp(12), dp(12))
+        root.setPadding(dp(14), dp(26), dp(14), dp(12))
 
-        val title = TextView(this)
-        title.text = "focuslock"
-        title.typeface = Typeface.MONOSPACE
-        title.setTypeface(Typeface.MONOSPACE, Typeface.BOLD)
-        title.textSize = 22f
-        title.letterSpacing = 0.15f
-        title.gravity = Gravity.CENTER
-        title.setTextColor(C_DARK)
-        root.addView(title, LinearLayout.LayoutParams(MATCH, WRAP))
+        root.addView(buildHeader(), LinearLayout.LayoutParams(MATCH, dp(56)))
 
         val body = LinearLayout(this)
         body.orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
@@ -332,60 +714,171 @@ class MainActivity : Activity() {
         }
         if (wide) {
             body.addView(left, lp(0, MATCH, 1f))
-            body.addView(host, lp(0, MATCH, 1.15f))
-            body.addView(rail, lp(WRAP, MATCH, 0f))
+            body.addView(host, lp(0, MATCH, 1.05f))
+            body.addView(rail, lp(WRAP, WRAP, 0f).also { it.gravity = Gravity.CENTER_VERTICAL })
         } else {
-            body.addView(left, lp(MATCH, 0, 0.9f))
-            body.addView(host, lp(MATCH, 0, 1.4f))
+            body.addView(left, lp(MATCH, 0, 1f))
+            body.addView(host, lp(MATCH, 0, 1.3f))
             body.addView(rail, lp(MATCH, dp(68), 0f))
         }
         root.addView(body, LinearLayout.LayoutParams(MATCH, 0, 1f))
         setContentView(root)
     }
 
+    private fun circleBtn(kind: Int, onClick: () -> Unit): IconView {
+        val v = IconView(this, kind)
+        v.setPadding(dp(12), dp(12), dp(12), dp(12))
+        v.background = oval(C_CARD)
+        v.setOnClickListener { onClick() }
+        return v
+    }
+
+    private fun buildHeader(): FrameLayout {
+        val f = FrameLayout(this)
+        val menu = circleBtn(IconView.MENU) { toast("Coming soon") }
+        val gear = circleBtn(IconView.GEAR) { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        f.addView(menu, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.START or Gravity.CENTER_VERTICAL))
+        f.addView(gear, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END or Gravity.CENTER_VERTICAL))
+
+        val logo = LinearLayout(this)
+        logo.orientation = LinearLayout.HORIZONTAL
+        logo.gravity = Gravity.CENTER
+        val lk = IconView(this, IconView.LOCK)
+        lk.tint = C_ORANGE
+        logo.addView(lk, LinearLayout.LayoutParams(dp(30), dp(34)))
+        val tv = TextView(this)
+        val sp = SpannableString("FocusLock")
+        sp.setSpan(ForegroundColorSpan(C_ORANGE), 5, 9, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        tv.text = sp
+        tv.textSize = 26f
+        tv.setTextColor(C_TXT)
+        tv.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        tv.setPadding(dp(8), 0, 0, 0)
+        logo.addView(tv, LinearLayout.LayoutParams(WRAP, WRAP))
+        f.addView(logo, FrameLayout.LayoutParams(WRAP, MATCH, Gravity.CENTER))
+        return f
+    }
+
     private fun buildLeft(): LinearLayout {
-        val l = LinearLayout(this)
-        l.orientation = LinearLayout.VERTICAL
-        l.background = rounded(Color.WHITE, 24)
-        l.setPadding(dp(16), dp(16), dp(16), dp(16))
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.background = rounded(C_CARD, 28)
+        card.clipToOutline = true
+
+        val content = LinearLayout(this)
+        content.orientation = LinearLayout.VERTICAL
+        content.setPadding(dp(16), dp(16), dp(16), dp(10))
+
+        // pill
+        val pillRow = LinearLayout(this)
+        pillRow.orientation = LinearLayout.HORIZONTAL
+        pillRow.gravity = Gravity.CENTER_VERTICAL
+        pillRow.background = rounded(C_TILE, 24)
+        pillRow.setPadding(dp(16), dp(8), dp(20), dp(8))
+        pillIcon = IconView(this, IconView.TIMER)
+        pillText = TextView(this)
+        pillText.textSize = 15f
+        pillText.setTextColor(C_TXT)
+        pillText.setPadding(dp(10), 0, 0, 0)
+        pillRow.addView(pillIcon, LinearLayout.LayoutParams(dp(22), dp(22)))
+        pillRow.addView(pillText, LinearLayout.LayoutParams(WRAP, WRAP))
+        val pl = LinearLayout.LayoutParams(WRAP, WRAP)
+        pl.gravity = Gravity.CENTER_HORIZONTAL
+        content.addView(pillRow, pl)
+
         pc = PixelClockView(this)
-        dots = DotsView(this)
         bagsView = BagsView(this)
+        dots = DotsView(this)
         caption = TextView(this)
         caption.gravity = Gravity.CENTER
         caption.textSize = 13f
         caption.letterSpacing = 0.1f
         caption.setTextColor(C_TXT)
-        l.addView(pc, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        l.addView(bagsView, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        l.addView(dots, LinearLayout.LayoutParams(MATCH, dp(16)))
-        val cl = LinearLayout.LayoutParams(MATCH, WRAP)
-        cl.topMargin = dp(10)
-        l.addView(caption, cl)
-        return l
+
+        // controls: reset / play / stop
+        controls = LinearLayout(this)
+        controls.orientation = LinearLayout.HORIZONTAL
+        controls.gravity = Gravity.CENTER
+
+        val reset = IconView(this, IconView.RESET)
+        reset.setPadding(dp(14), dp(14), dp(14), dp(14))
+        reset.background = oval(C_TILE)
+        reset.setOnClickListener {
+            if (Store.active(this)) {
+                toast("Can't change while a session is running")
+            } else {
+                durMin = 180
+                refreshDur(false)
+                updateLeft()
+            }
+        }
+        val play = IconView(this, IconView.PLAY)
+        play.tint = Color.WHITE
+        play.setPadding(dp(30), dp(14), dp(30), dp(14))
+        play.background = rounded(C_DARK, 28)
+        play.setOnClickListener {
+            if (Store.active(this)) toast("A session is already running") else startFocus()
+        }
+        val stop = IconView(this, IconView.STOP)
+        stop.setPadding(dp(14), dp(14), dp(14), dp(14))
+        stop.background = oval(C_TILE)
+        stop.setOnClickListener {
+            if (!Store.active(this)) {
+                toast("No session is running")
+            } else if (Store.strict(this)) {
+                toast("Strict mode is ON, can't end early")
+            } else if (Store.sessionOn(this)) {
+                Store.stopSession(this)
+                render()
+                updateLeft()
+            } else {
+                toast("Routine is running, turn it off from the Routines tab")
+            }
+        }
+        fun cl(w: Int): LinearLayout.LayoutParams {
+            val l = LinearLayout.LayoutParams(w, dp(56))
+            l.setMargins(dp(10), 0, dp(10), 0)
+            return l
+        }
+        controls.addView(reset, cl(dp(56)))
+        controls.addView(play, cl(dp(112)))
+        controls.addView(stop, cl(dp(56)))
+
+        content.addView(pc, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        content.addView(bagsView, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        content.addView(controls, LinearLayout.LayoutParams(MATCH, WRAP))
+        content.addView(dots, LinearLayout.LayoutParams(MATCH, dp(16)))
+        val capLp = LinearLayout.LayoutParams(MATCH, WRAP)
+        capLp.topMargin = dp(10)
+        content.addView(caption, capLp)
+
+        scene = SceneView(this)
+        card.addView(content, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        card.addView(scene, LinearLayout.LayoutParams(MATCH, dp(110)))
+        return card
     }
 
     private fun buildRail(wide: Boolean): LinearLayout {
         val r = LinearLayout(this)
         r.orientation = if (wide) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         r.gravity = Gravity.CENTER
-        r.background = rounded(Color.parseColor("#F2F2F2"), 30)
-        val icons = arrayOf("\u23F1", "\uD83C\uDF92", "\u25A6", "\uD83D\uDCCA")
+        r.background = rounded(Color.parseColor("#FFFFFF"), 32)
+        r.setPadding(dp(4), dp(4), dp(4), dp(4))
         railBtns.clear()
         for (i in 0..3) {
-            val t = TextView(this)
-            t.text = icons[i]
-            t.textSize = 22f
-            t.gravity = Gravity.CENTER
+            val t = IconView(this, tabKinds[i])
+            t.setPadding(dp(15), dp(15), dp(15), dp(15))
             t.setOnClickListener {
-                tab = i
-                render()
-                updateLeft()
-                styleRail()
+                if (tab != i) {
+                    tab = i
+                    render(true)
+                    updateLeft()
+                    styleRail()
+                }
             }
             railBtns.add(t)
-            val lp = if (wide) LinearLayout.LayoutParams(dp(56), dp(56)) else LinearLayout.LayoutParams(0, dp(52), 1f)
-            lp.setMargins(dp(6), dp(6), dp(6), dp(6))
+            val lp = if (wide) LinearLayout.LayoutParams(dp(58), dp(58)) else LinearLayout.LayoutParams(0, dp(52), 1f)
+            lp.setMargins(dp(4), dp(4), dp(4), dp(4))
             r.addView(t, lp)
         }
         styleRail()
@@ -394,12 +887,12 @@ class MainActivity : Activity() {
 
     private fun styleRail() {
         for (i in railBtns.indices) {
-            railBtns[i].background = if (i == tab) rounded(C_DARK, 24) else null
-            railBtns[i].setTextColor(if (i == tab) Color.WHITE else C_TXT)
+            railBtns[i].background = if (i == tab) rounded(C_DARK, 26) else null
+            railBtns[i].tint = if (i == tab) Color.WHITE else C_DARK
         }
     }
 
-    private fun render() {
+    private fun render(animate: Boolean = false) {
         host.removeAllViews()
         val page = when (tab) {
             0 -> timerPage()
@@ -408,6 +901,11 @@ class MainActivity : Activity() {
             else -> statsPage()
         }
         host.addView(page, FrameLayout.LayoutParams(MATCH, MATCH))
+        if (animate) {
+            page.alpha = 0f
+            page.translationX = dp(28).toFloat()
+            page.animate().alpha(1f).translationX(0f).setDuration(220).start()
+        }
     }
 
     // ---------- Left panel ----------
@@ -422,30 +920,33 @@ class MainActivity : Activity() {
 
     private fun updateLeft() {
         pc.visibility = if (tab == 1) View.GONE else View.VISIBLE
-        dots.visibility = if (tab == 0 || tab == 3) View.VISIBLE else View.GONE
         bagsView.visibility = if (tab == 1) View.VISIBLE else View.GONE
+        dots.visibility = if (tab == 3) View.VISIBLE else View.GONE
+        controls.visibility = if (tab == 0) View.VISIBLE else View.GONE
+        scene.visibility = if (tab == 0) View.VISIBLE else View.GONE
+        caption.visibility = if (tab == 0) View.GONE else View.VISIBLE
+        pillIcon.kind = tabKinds[tab]
+        pillIcon.invalidate()
+        pillText.text = tabNames[tab]
+
         when (tab) {
             0 -> {
-                dots.marks = null
-                dots.total = 40
                 if (Store.sessionOn(this)) {
                     val remMs = Store.until(this) - System.currentTimeMillis()
                     val remMin = ((remMs + 59_999L) / 60_000L).toInt()
                     pc.show(remMin, C_ORANGE)
                     val total = Store.sessionMinutes(this) * 60_000L
                     val frac = if (total > 0L) 1f - remMs.toFloat() / total.toFloat() else 0f
-                    dots.filled = (frac * 40f).toInt().coerceIn(0, 40)
-                    caption.text = "FOCUS ON  \u00B7  ${remMin / 60}h ${remMin % 60}m left"
+                    scene.progress = frac
+                    pillText.text = "Focus Running"
                 } else if (Store.inSchedule(this)) {
                     pc.show(0, C_ORANGE)
-                    dots.filled = 0
-                    caption.text = "ROUTINE ON"
+                    scene.progress = 0.5f
+                    pillText.text = "Routine Active"
                 } else {
                     pc.show(durMin, C_ORANGE)
-                    dots.filled = 2
-                    caption.text = "READY"
+                    scene.progress = 0.3f
                 }
-                dots.invalidate()
             }
             1 -> {
                 bagsView.active = bagSel
@@ -473,24 +974,36 @@ class MainActivity : Activity() {
     }
 
     // ---------- Page 0: Timer ----------
-    private fun durTile(min: Int, unit: String): TextView {
-        val big = if (min < 60) "$min" else "${min / 60}"
-        return tile("$big\n$unit", durMin == min) {
+    private fun refreshDur(fromRuler: Boolean) {
+        styleTile(t15, durMin == 15)
+        styleTile(t45, durMin == 45)
+        styleTile(t180, durMin == 180)
+        val preset = durMin == 15 || durMin == 45 || durMin == 180
+        tCustom?.text = twoLine(fmt(durMin), "Custom")
+        styleTile(tCustom, !preset)
+        if (!fromRuler) ruler?.setMinutes(durMin)
+    }
+
+    private fun durTile(min: Int, top: String, bottom: String): TextView {
+        return tile(twoLine(top, bottom), durMin == min) {
             if (locked()) {
-                toast("Strict mode ON hai, abhi badal nahi sakte")
+                lockedToast()
             } else {
                 durMin = min
-                render()
+                refreshDur(false)
                 updateLeft()
             }
         }
     }
 
-    private fun customTile(): TextView {
-        val preset = durMin == 15 || durMin == 45 || durMin == 60 || durMin == 180 || durMin == 360
-        return tile("Custom\n" + fmt(durMin), !preset) {
-            if (locked()) toast("Strict mode ON hai, abhi badal nahi sakte") else customDialog()
+    private fun stepDur(d: Int) {
+        if (locked()) {
+            lockedToast()
+            return
         }
+        durMin = (((durMin + d) / 5) * 5).coerceIn(5, 1440)
+        refreshDur(false)
+        updateLeft()
     }
 
     private fun customDialog() {
@@ -498,26 +1011,26 @@ class MainActivity : Activity() {
         box.orientation = LinearLayout.HORIZONTAL
         box.setPadding(dp(16), dp(8), dp(16), dp(0))
         val eh = EditText(this)
-        eh.hint = "ghante"
+        eh.hint = "hours"
         eh.inputType = InputType.TYPE_CLASS_NUMBER
         eh.setText((durMin / 60).toString())
         val em = EditText(this)
-        em.hint = "minute"
+        em.hint = "minutes"
         em.inputType = InputType.TYPE_CLASS_NUMBER
         em.setText((durMin % 60).toString())
         box.addView(eh, LinearLayout.LayoutParams(0, WRAP, 1f))
         box.addView(em, LinearLayout.LayoutParams(0, WRAP, 1f))
         AlertDialog.Builder(this)
-            .setTitle("Custom time (max 24 ghante)")
+            .setTitle("Custom time (max 24 hours)")
             .setView(box)
             .setPositiveButton("OK") { _, _ ->
                 val t = (eh.text.toString().toLongOrNull() ?: 0L) * 60L + (em.text.toString().toLongOrNull() ?: 0L)
                 if (t in 1L..1440L) {
                     durMin = t.toInt()
-                    render()
+                    refreshDur(false)
                     updateLeft()
                 } else {
-                    toast("1 minute se 24 ghante ke beech rakh")
+                    toast("Pick between 1 minute and 24 hours")
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -525,13 +1038,13 @@ class MainActivity : Activity() {
     }
 
     private fun toggleStrict() {
-        if (Store.active(this)) { toast("Session chalte time nahi badal sakte"); return }
+        if (Store.active(this)) { toast("Can't change during a session"); return }
         Store.setStrict(this, !Store.strict(this))
         render()
     }
 
     private fun toggleMode() {
-        if (Store.active(this)) { toast("Session chalte time nahi badal sakte"); return }
+        if (Store.active(this)) { toast("Can't change during a session"); return }
         Store.setAllowMode(this, !Store.allowMode(this))
         render()
         updateLeft()
@@ -540,328 +1053,48 @@ class MainActivity : Activity() {
     private fun timerPage(): View {
         val col = vbox()
         if (!accEnabled()) {
-            val b = tile("Accessibility OFF  \u00B7  tap karke ON kar", false) {
+            val b = tile("Accessibility OFF  \u00B7  tap to turn ON", false) {
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }
             b.textSize = 14f
             b.setTextColor(Color.WHITE)
-            b.background = rounded(C_ORANGE, 14)
+            b.background = rounded(C_ORANGE, 16)
             col.addView(b, lpV(dp(52)))
         }
-        col.addView(hrow(durTile(15, "Minutes"), durTile(45, "Minutes")), lpV())
-        col.addView(hrow(durTile(60, "Hour"), durTile(180, "Hours")), lpV())
-        col.addView(hrow(durTile(360, "Hours"), customTile()), lpV())
-        val strictTile = tile("STRICT\n" + if (Store.strict(this)) "ON" else "OFF", Store.strict(this)) { toggleStrict() }
-        val modeTile = tile("MODE\n" + if (Store.allowMode(this)) "BAG (allow only)" else "BLOCK", Store.allowMode(this)) { toggleMode() }
-        col.addView(hrow(strictTile, modeTile), lpV(dp(72)))
 
-        if (!Store.active(this)) {
-            col.addView(SlideView(this) { startFocus() }, lpV(dp(64)))
-        } else if (Store.sessionOn(this) && !Store.strict(this)) {
-            col.addView(tile("End session", false) {
-                Store.stopSession(this)
-                render()
-                updateLeft()
-            }, lpV(dp(64)))
-        } else if (Store.strict(this)) {
-            col.addView(tile("STRICT ON  \u00B7  timer khatam hone tak locked", false) {}, lpV(dp(64)))
-        } else {
-            col.addView(tile("Routine chal raha hai (Routines tab se band kar)", false) {}, lpV(dp(64)))
+        val a = durTile(15, "15", "Minutes")
+        val b = durTile(45, "45", "Minutes")
+        val c = durTile(180, "3", "Hours")
+        val preset = durMin == 15 || durMin == 45 || durMin == 180
+        val d = tile(twoLine(fmt(durMin), "Custom"), !preset) {
+            if (locked()) lockedToast() else customDialog()
         }
-        return col
-    }
+        t15 = a
+        t45 = b
+        t180 = c
+        tCustom = d
 
-    private fun startFocus() {
-        if (Store.selected(this).isEmpty()) {
-            toast("Pehle Bags tab me apps add kar")
-            return
-        }
-        if (!accEnabled()) {
-            toast("Pehle Accessibility ON kar")
-            return
-        }
-        val go = {
-            Store.startSession(this, durMin.toLong())
-            render()
+        val tilesCol = LinearLayout(this)
+        tilesCol.orientation = LinearLayout.VERTICAL
+        tilesCol.addView(hrow(a, b), lpV())
+        val lowLp = LinearLayout.LayoutParams(MATCH, 0, 1.7f)
+        lowLp.setMargins(0, dp(5), 0, dp(5))
+        tilesCol.addView(hrow(c, d), lowLp)
+
+        val rl = RulerView(this) { m ->
+            durMin = m
+            refreshDur(true)
             updateLeft()
         }
-        if (Store.strict(this)) {
-            AlertDialog.Builder(this)
-                .setTitle("Strict mode")
-                .setMessage("${durMin / 60}h ${durMin % 60}m tak End nahi kar paega aur Settings bhi block rahegi. Pakka?")
-                .setPositiveButton("Haan") { _, _ -> go() }
-                .setNegativeButton("Nahi", null)
-                .show()
-        } else {
-            go()
-        }
-    }
-
-    // ---------- Page 1: Bags ----------
-    private fun bagTab(i: Int): TextView {
-        val sel = bagSel == i
-        val t = tile("Bag ${i + 1}", false) {
+        rl.onBlocked = {
             if (locked()) {
-                toast("Strict mode ON hai, abhi badal nahi sakte")
+                lockedToast()
+                true
             } else {
-                bagSel = i
-                Store.setActiveBag(this, i)
-                render()
-                updateLeft()
+                false
             }
         }
-        if (sel) {
-            t.setTextColor(Color.WHITE)
-            t.background = rounded(C_ORANGE, 26)
-        }
-        return t
-    }
+        rl.setMinutes(durMin)
+        ruler = rl
 
-    private fun bagsPage(): View {
-        val col = vbox()
-        col.addView(hrow(bagTab(0), bagTab(1), bagTab(2)), lpV(dp(52)))
-        val list = Store.bag(this, bagSel).toList().sorted()
-        val cells = ArrayList<View>()
-        for (i in 0 until 6) {
-            val cell = FrameLayout(this)
-            cell.background = rounded(C_TILE, 16)
-            if (i == 5 && list.size > 6) {
-                val tv = TextView(this)
-                tv.text = "+${list.size - 5}"
-                tv.textSize = 22f
-                tv.gravity = Gravity.CENTER
-                tv.setTextColor(C_TXT)
-                cell.addView(tv, FrameLayout.LayoutParams(MATCH, MATCH))
-            } else if (i < list.size) {
-                val iv = ImageView(this)
-                iv.setImageDrawable(icon(list[i]))
-                val lp = FrameLayout.LayoutParams(dp(44), dp(44))
-                lp.gravity = Gravity.CENTER
-                cell.addView(iv, lp)
-            }
-            cell.setOnClickListener { showPicker() }
-            cells.add(cell)
-        }
-        col.addView(hrow(cells[0], cells[1], cells[2]), lpV())
-        col.addView(hrow(cells[3], cells[4], cells[5]), lpV())
-        col.addView(hrow(
-            tile("Apps add / hatao", true) { showPicker() },
-            tile("Bag khali kar", false) {
-                if (locked()) {
-                    toast("Strict mode ON hai, abhi badal nahi sakte")
-                } else {
-                    Store.setBag(this, bagSel, emptySet())
-                    render()
-                    updateLeft()
-                }
-            }
-        ), lpV(dp(80)))
-        return col
-    }
-
-    private fun showPicker() {
-        if (locked()) {
-            toast("Strict mode ON hai, abhi badal nahi sakte")
-            return
-        }
-        val set = HashSet(Store.bag(this, bagSel))
-        var shown: List<App> = allApps
-
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(12), dp(8), dp(12), dp(0))
-        val search = EditText(this)
-        search.hint = "Search app"
-        search.isSingleLine = true
-        col.addView(search)
-
-        val lv = ListView(this)
-        val ad = object : BaseAdapter() {
-            override fun getCount() = shown.size
-            override fun getItem(i: Int): Any = shown[i]
-            override fun getItemId(i: Int) = i.toLong()
-            override fun getView(i: Int, v: View?, parent: ViewGroup?): View {
-                val a = shown[i]
-                val row = (v as? LinearLayout) ?: LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(8), dp(6), dp(8), dp(6))
-                    val iv = ImageView(this@MainActivity)
-                    addView(iv, LinearLayout.LayoutParams(dp(40), dp(40)))
-                    val tv = TextView(this@MainActivity)
-                    tv.textSize = 16f
-                    tv.setPadding(dp(12), 0, dp(8), 0)
-                    addView(tv, LinearLayout.LayoutParams(0, WRAP, 1f))
-                    val cb = CheckBox(this@MainActivity)
-                    cb.isClickable = false
-                    cb.isFocusable = false
-                    addView(cb)
-                }
-                (row.getChildAt(0) as ImageView).setImageDrawable(icon(a.pkg))
-                (row.getChildAt(1) as TextView).text = a.label
-                (row.getChildAt(2) as CheckBox).isChecked = a.pkg in set
-                return row
-            }
-        }
-        lv.adapter = ad
-        lv.setOnItemClickListener { _, _, i, _ ->
-            val p = shown[i].pkg
-            if (!set.remove(p)) set.add(p)
-            ad.notifyDataSetChanged()
-        }
-        search.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) {
-                val q = s?.toString() ?: ""
-                shown = if (q.isBlank()) allApps else allApps.filter { it.label.contains(q, ignoreCase = true) }
-                ad.notifyDataSetChanged()
-            }
-            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
-            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
-        })
-
-        val bar = LinearLayout(this)
-        bar.orientation = LinearLayout.HORIZONTAL
-        val bAll = Button(this)
-        bAll.text = "Dikh rahe sab select"
-        bAll.setOnClickListener {
-            shown.forEach { set.add(it.pkg) }
-            ad.notifyDataSetChanged()
-        }
-        val bNone = Button(this)
-        bNone.text = "Sab hatao"
-        bNone.setOnClickListener {
-            set.clear()
-            ad.notifyDataSetChanged()
-        }
-        bar.addView(bAll, LinearLayout.LayoutParams(0, WRAP, 1f))
-        bar.addView(bNone, LinearLayout.LayoutParams(0, WRAP, 1f))
-        col.addView(bar)
-        col.addView(lv, LinearLayout.LayoutParams(MATCH, dp(360)))
-
-        AlertDialog.Builder(this)
-            .setTitle("Bag ${bagSel + 1} ke apps")
-            .setView(col)
-            .setPositiveButton("Save") { _, _ ->
-                Store.setBag(this, bagSel, set)
-                render()
-                updateLeft()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    // ---------- Page 2: Routines ----------
-    private fun rtTab(i: Int): TextView {
-        val t = tile("ROUTINE ${i + 1}\n" + fmt(Store.rtStart(this, i)), false) {
-            rtSel = i
-            render()
-            updateLeft()
-        }
-        if (rtSel == i) {
-            t.setTextColor(Color.WHITE)
-            t.background = rounded(C_DARK, 16)
-        }
-        return t
-    }
-
-    private fun pickTime(start: Boolean) {
-        if (locked()) {
-            toast("Strict mode ON hai, abhi badal nahi sakte")
-            return
-        }
-        val cur = if (start) Store.rtStart(this, rtSel) else Store.rtEnd(this, rtSel)
-        TimePickerDialog(this, { _, h, m ->
-            if (start) Store.setRtStart(this, rtSel, h * 60 + m) else Store.setRtEnd(this, rtSel, h * 60 + m)
-            render()
-            updateLeft()
-        }, cur / 60, cur % 60, true).show()
-    }
-
-    private fun routinesPage(): View {
-        val col = vbox()
-        col.addView(hrow(rtTab(0), rtTab(1), rtTab(2)), lpV(dp(72)))
-
-        val mask = Store.rtDays(this, rtSel)
-        val names = arrayOf("S", "M", "T", "W", "T", "F", "S")
-        val days = ArrayList<View>()
-        for (d in 0..6) {
-            val on = ((mask shr d) and 1) == 1
-            val t = TextView(this)
-            t.text = names[d]
-            t.gravity = Gravity.CENTER
-            t.textSize = 18f
-            t.setTextColor(if (on) Color.WHITE else C_TXT)
-            t.background = rounded(if (on) C_ORANGE else C_TILE, 14)
-            t.setOnClickListener {
-                if (locked()) {
-                    toast("Strict mode ON hai, abhi badal nahi sakte")
-                } else {
-                    Store.setRtDays(this, rtSel, mask xor (1 shl d))
-                    render()
-                    updateLeft()
-                }
-            }
-            days.add(t)
-        }
-        col.addView(hrow(*days.toTypedArray()), lpV())
-
-        col.addView(hrow(
-            tile("START\n" + fmt(Store.rtStart(this, rtSel)), false) { pickTime(true) },
-            tile("END\n" + fmt(Store.rtEnd(this, rtSel)), false) { pickTime(false) }
-        ), lpV())
-
-        val on = Store.rtOn(this, rtSel)
-        col.addView(tile("ROUTINE " + if (on) "ON" else "OFF", on) {
-            if (locked()) {
-                toast("Strict mode ON hai, abhi badal nahi sakte")
-            } else {
-                Store.setRtOn(this, rtSel, !on)
-                render()
-                updateLeft()
-            }
-        }, lpV(dp(72)))
-        return col
-    }
-
-    // ---------- Page 3: Stats ----------
-    private fun statsPage(): View {
-        val col = vbox()
-        val cal = Calendar.getInstance()
-        val today = Store.dayMinutes(this, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH))
-        val month = monthTotal()
-        val label = SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(cal.time).uppercase()
-        col.addView(tile(label, false) {}, lpV(dp(64)))
-        col.addView(tile("TODAY\n$today min", false) {}, lpV())
-        col.addView(tile("THIS MONTH\n${month / 60}h ${month % 60}m", true) {}, lpV())
-        col.addView(tile("Minutes timer start karte waqt count hote hain", false) {}, lpV(dp(64)))
-        return col
-    }
-
-    // ---------- Lifecycle ----------
-    private val tick = object : Runnable {
-        override fun run() {
-            val r = Store.active(this@MainActivity)
-            if (r != lastRunning) {
-                lastRunning = r
-                render()
-            }
-            updateLeft()
-            ui.postDelayed(this, 1000)
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        lastRunning = Store.active(this)
-        render()
-        updateLeft()
-        styleRail()
-        ui.removeCallbacks(tick)
-        ui.postDelayed(tick, 1000)
-    }
-
-    override fun onPause() {
-        super.onPause()
-        ui.removeCallbacks(tick)
-    }
-}
+     
