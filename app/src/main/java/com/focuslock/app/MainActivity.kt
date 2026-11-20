@@ -1,6 +1,8 @@
 package com.focuslock.app
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.TimePickerDialog
@@ -27,6 +29,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityManager
+import android.view.animation.DecelerateInterpolator
 import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.CheckBox
@@ -57,6 +60,20 @@ class MainActivity : Activity() {
     private var bagSel = 0
     private var rtSel = 0
     private var lastRunning = false
+
+    // focus (black) screen
+    private var focus: FocusScreen? = null
+    private lateinit var normalRoot: View
+    private var origStatus = 0
+    private var origNav = 0
+    private var origUi = 0
+
+    // animations: ruler slide + clock colour
+    private var rulerAnim: ValueAnimator? = null
+    private var rulerShown = 180f
+    private var clockColor = C_ORANGE
+    private var clockTarget = C_ORANGE
+    private var clockAnim: ValueAnimator? = null
 
     private lateinit var host: FrameLayout
     private lateinit var pc: PixelClockView
@@ -211,6 +228,10 @@ class MainActivity : Activity() {
             body.addView(rail, lp(MATCH, dp(68), 0f))
         }
         root.addView(body, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        normalRoot = root
+        origStatus = window.statusBarColor
+        origNav = window.navigationBarColor
+        origUi = window.decorView.systemUiVisibility
         setContentView(root)
     }
 
@@ -397,6 +418,30 @@ class MainActivity : Activity() {
         }
     }
 
+    // ---------- Clock colour ----------
+    private fun timeColor(min: Int): Int {
+        val t = (min / 180f).coerceIn(0f, 1f)
+        val a = Color.parseColor("#5B4A44")
+        val r = (Color.red(a) + (Color.red(C_ORANGE) - Color.red(a)) * t).toInt()
+        val g = (Color.green(a) + (Color.green(C_ORANGE) - Color.green(a)) * t).toInt()
+        val b = (Color.blue(a) + (Color.blue(C_ORANGE) - Color.blue(a)) * t).toInt()
+        return Color.rgb(r, g, b)
+    }
+
+    private fun clockColorTo(target: Int) {
+        if (target == clockTarget) return
+        clockTarget = target
+        clockAnim?.cancel()
+        val a = ValueAnimator.ofObject(ArgbEvaluator(), clockColor, target)
+        a.duration = 260L
+        a.addUpdateListener {
+            clockColor = it.animatedValue as Int
+            if (tab == 0 && focus == null && !Store.active(this)) pc.show(durMin, clockColor)
+        }
+        a.start()
+        clockAnim = a
+    }
+
     // ---------- Left panel ----------
     private fun monthTotal(): Int {
         val cal = Calendar.getInstance()
@@ -433,7 +478,8 @@ class MainActivity : Activity() {
                     scene.progress = 0.5f
                     pillText.text = "Routine Active"
                 } else {
-                    pc.show(durMin, C_ORANGE)
+                    clockColorTo(timeColor(durMin))
+                    pc.show(durMin, clockColor)
                     scene.progress = 0.3f
                 }
             }
@@ -470,7 +516,34 @@ class MainActivity : Activity() {
         val preset = durMin == 15 || durMin == 45 || durMin == 180
         tCustom?.text = twoLine(fmt(durMin), "Custom")
         styleTile(tCustom, !preset)
-        if (!fromRuler) ruler?.setMinutes(durMin)
+        if (!fromRuler) animateRuler(durMin)
+    }
+
+    private fun animateRuler(target: Int) {
+        val rl = ruler ?: return
+        rulerAnim?.cancel()
+        val from = rulerShown
+        val to = target.toFloat().coerceAtLeast(5f)
+        if (Math.abs(to - from) < 0.5f) {
+            rulerShown = to
+            rl.setMinutes(target)
+            return
+        }
+        val a = ValueAnimator.ofFloat(from, to)
+        a.duration = 380L
+        a.interpolator = DecelerateInterpolator()
+        a.addUpdateListener {
+            val f = it.animatedValue as Float
+            rulerShown = f
+            rl.setMinutes(f.toInt())
+        }
+        a.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                if (rulerShown == to) rl.setMinutes(target)
+            }
+        })
+        a.start()
+        rulerAnim = a
     }
 
     private fun durTile(min: Int, top: String, bottom: String): TextView {
@@ -570,12 +643,15 @@ class MainActivity : Activity() {
         lowLp.setMargins(0, dp(5), 0, dp(5))
         tilesCol.addView(hrow(c, d), lowLp)
 
+        rulerAnim?.cancel()
         val rl = RulerView(this) { m ->
             durMin = m
+            rulerShown = m.toFloat()
             refreshDur(true)
             updateLeft()
         }
         rl.onBlocked = {
+            rulerAnim?.cancel()
             if (locked()) {
                 lockedToast()
                 true
@@ -584,6 +660,7 @@ class MainActivity : Activity() {
             }
         }
         rl.setMinutes(durMin)
+        rulerShown = durMin.toFloat()
         ruler = rl
 
         val up = IconView(this, IconView.UP)
@@ -655,6 +732,7 @@ class MainActivity : Activity() {
             Store.startSession(this, durMin.toLong())
             render()
             updateLeft()
+            syncFocus()
         }
         if (Store.strict(this)) {
             AlertDialog.Builder(this)
@@ -908,15 +986,59 @@ class MainActivity : Activity() {
         return col
     }
 
+    // ---------- Focus (black) screen ----------
+    private fun syncFocus() {
+        val on = Store.sessionOn(this)
+        if (on && focus == null) {
+            enterFocus()
+        } else if (!on && focus != null) {
+            exitFocus()
+        }
+    }
+
+    private fun enterFocus() {
+        val f = FocusScreen(this) { syncFocus() }
+        focus = f
+        window.statusBarColor = Color.BLACK
+        window.navigationBarColor = Color.BLACK
+        window.decorView.systemUiVisibility = 0
+        val lp = window.attributes
+        lp.screenBrightness = 0.08f
+        window.attributes = lp
+        setContentView(f.view)
+        f.update()
+    }
+
+    private fun exitFocus() {
+        focus = null
+        val lp = window.attributes
+        lp.screenBrightness = -1f
+        window.attributes = lp
+        window.statusBarColor = origStatus
+        window.navigationBarColor = origNav
+        window.decorView.systemUiVisibility = origUi
+        setContentView(normalRoot)
+        lastRunning = Store.active(this)
+        render()
+        updateLeft()
+        styleRail()
+    }
+
     // ---------- Lifecycle ----------
     private val tick = object : Runnable {
         override fun run() {
-            val r = Store.active(this@MainActivity)
-            if (r != lastRunning) {
-                lastRunning = r
-                render()
+            syncFocus()
+            val f = focus
+            if (f != null) {
+                f.update()
+            } else {
+                val r = Store.active(this@MainActivity)
+                if (r != lastRunning) {
+                    lastRunning = r
+                    render()
+                }
+                updateLeft()
             }
-            updateLeft()
             ui.postDelayed(this, 1000)
         }
     }
@@ -927,6 +1049,7 @@ class MainActivity : Activity() {
         render()
         updateLeft()
         styleRail()
+        syncFocus()
         ui.removeCallbacks(tick)
         ui.postDelayed(tick, 1000)
     }
