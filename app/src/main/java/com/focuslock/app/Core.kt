@@ -3,7 +3,12 @@ package com.focuslock.app
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
@@ -37,6 +42,38 @@ object Store {
         addMinutes(c, minutes)
     }
     fun stopSession(c: Context) { p(c).edit().putLong("until", 0L).apply() }
+
+    // +15 hold: session ko lamba karta hai (max 24 ghante)
+    fun extendSession(c: Context, minutes: Long) {
+        val now = System.currentTimeMillis()
+        val u = until(c)
+        if (now >= u) return
+        val cap = now + 1440L * 60_000L
+        val nu = minOf(u + minutes * 60_000L, cap)
+        val added = (nu - u) / 60_000L
+        if (added <= 0L) return
+        p(c).edit()
+            .putLong("until", nu)
+            .putInt("sess_min", sessionMinutes(c) + added.toInt())
+            .apply()
+        addMinutes(c, added)
+    }
+
+    // Parachute: roz 1 milta hai (strict session se emergency exit)
+    fun chutes(c: Context): Int {
+        val cal = Calendar.getInstance()
+        val today = (cal.get(Calendar.YEAR) * 1000 + cal.get(Calendar.DAY_OF_YEAR)).toString()
+        if (p(c).getString("chute_day", "") != today) {
+            p(c).edit().putString("chute_day", today).putInt("chutes", 1).apply()
+        }
+        return p(c).getInt("chutes", 1)
+    }
+    fun useChute(c: Context): Boolean {
+        val n = chutes(c)
+        if (n <= 0) return false
+        p(c).edit().putInt("chutes", n - 1).apply()
+        return true
+    }
     fun sessionOn(c: Context) = System.currentTimeMillis() < until(c)
 
     // ---------- Routines (3) ----------
@@ -85,16 +122,45 @@ object Store {
 
 class BlockService : AccessibilityService() {
     private var lastAt = 0L
+    private val handler = Handler(Looper.getMainLooper())
+
+    // Phone / emergency apps hamesha chalenge
     private val alwaysOk = setOf(
         "com.android.systemui", "android", "com.android.phone",
         "com.android.dialer", "com.google.android.dialer", "com.android.emergency",
-        "com.android.server.telecom", "com.android.incallui"
+        "com.android.server.telecom", "com.android.incallui",
+        "com.samsung.android.dialer", "com.samsung.android.incallui",
+        "com.samsung.android.app.telephonyui",
+        "com.android.contacts", "com.google.android.contacts"
     )
+
+    // Dialer aur Camera (sirf phone ke system apps) hamesha chalenge
+    private val emergency: Set<String> by lazy {
+        val out = HashSet<String>()
+        val intents = listOf(
+            Intent(Intent.ACTION_DIAL, Uri.parse("tel:")),
+            Intent(Intent.ACTION_CALL_BUTTON),
+            Intent(MediaStore.ACTION_IMAGE_CAPTURE),
+            Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
+        )
+        for (intent in intents) {
+            try {
+                for (r in packageManager.queryIntentActivities(intent, 0)) {
+                    val f = r.activityInfo.applicationInfo.flags
+                    val sys = ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
+                    if ((f and sys) != 0) out.add(r.activityInfo.packageName)
+                }
+            } catch (e: Exception) {
+            }
+        }
+        out
+    }
 
     override fun onAccessibilityEvent(e: AccessibilityEvent?) {
         val pkg = e?.packageName?.toString() ?: return
         if (pkg == packageName || pkg in alwaysOk) return
         if (!Store.active(this)) return
+        if (pkg in emergency) return
         if (pkg == homePkg() || pkg == imePkg()) return
 
         val sel = Store.selected(this)
@@ -107,6 +173,21 @@ class BlockService : AccessibilityService() {
         lastAt = now
         performGlobalAction(GLOBAL_ACTION_HOME)
         Toast.makeText(this, "Focus mode ON", Toast.LENGTH_SHORT).show()
+        if (Store.sessionOn(this)) handler.postDelayed({ openFocus() }, 250L)
+    }
+
+    // Blocked app khulte hi black focus screen samne aaye
+    private fun openFocus() {
+        try {
+            val i = Intent(this, MainActivity::class.java)
+            i.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+            startActivity(i)
+        } catch (e: Exception) {
+        }
     }
 
     private fun homePkg(): String? {
