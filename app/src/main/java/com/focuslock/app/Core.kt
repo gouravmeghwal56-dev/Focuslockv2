@@ -58,6 +58,10 @@ object Store {
     }
     fun swReset(c: Context) { p(c).edit().putLong("sw_base", 0L).putLong("sw_start", 0L).apply() }
 
+    // ---------- Profile ----------
+    fun profileName(c: Context): String = p(c).getString("profile_name", "") ?: ""
+    fun setProfileName(c: Context, v: String) { p(c).edit().putString("profile_name", v.trim()).apply() }
+
     // ---------- Mode ----------
     fun allowMode(c: Context) = p(c).getBoolean("allow", false)
     fun setAllowMode(c: Context, v: Boolean) { p(c).edit().putBoolean("allow", v).apply() }
@@ -195,7 +199,7 @@ class BlockService : AccessibilityService() {
     override fun onAccessibilityEvent(e: AccessibilityEvent?) {
         val pkg = e?.packageName?.toString() ?: return
         checkDetox(pkg)
-        if (e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (e?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         if (pkg == packageName || pkg in alwaysOk) return
         if (!Store.active(this)) return
         if (pkg in emergency) return
