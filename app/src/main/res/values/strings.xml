@@ -1,3 +1,3 @@
 <resources>
-    <string name="service_desc">FocusLock ye dekhta hai ki kaun sa app khula hai, aur YouTube/Instagram me Shorts ya Reels screen hai ya nahi (sirf screen ke view ID se). Koi text, message ya personal data padhta ya save nahi karta.</string>
+    <string name="service_desc">FocusLock checks which app is open, and whether YouTube Shorts or Instagram Reels is on screen, so it can block distractions. It does not read your text, messages or personal data.</string>
 </resources>
