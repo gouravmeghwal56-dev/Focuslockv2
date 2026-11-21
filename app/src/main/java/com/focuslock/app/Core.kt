@@ -12,6 +12,7 @@ import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
 import java.util.Calendar
 
@@ -57,6 +58,33 @@ object Store {
         }
     }
     fun swReset(c: Context) { p(c).edit().putLong("sw_base", 0L).putLong("sw_start", 0L).apply() }
+
+    fun detoxApps(c: Context): Set<String> = HashSet(p(c).getStringSet("dx_apps", emptySet()) ?: emptySet())
+    fun detoxAppsOn(c: Context): Set<String> = HashSet(p(c).getStringSet("dx_apps_on", emptySet()) ?: emptySet())
+    fun addDetoxApp(c: Context, pkg: String) {
+        p(c).edit().putStringSet("dx_apps", detoxApps(c) + pkg).putStringSet("dx_apps_on", detoxAppsOn(c) + pkg).apply()
+    }
+    fun removeDetoxApp(c: Context, pkg: String) {
+        p(c).edit().putStringSet("dx_apps", detoxApps(c) - pkg).putStringSet("dx_apps_on", detoxAppsOn(c) - pkg)
+            .putStringSet("dx_full", detoxFull(c) - pkg).apply()
+    }
+    fun detoxFull(c: Context): Set<String> = HashSet(p(c).getStringSet("dx_full", emptySet()) ?: emptySet())
+    fun setDetoxFull(c: Context, pkg: String, v: Boolean) {
+        p(c).edit().putStringSet("dx_full", if (v) detoxFull(c) + pkg else detoxFull(c) - pkg).apply()
+    }
+    // Debug capture: kisi app ke visible view IDs 20 sec tak save karo
+    fun dxDbgStart(c: Context, pkg: String) {
+        p(c).edit().putString("dx_dbg_pkg", pkg).putLong("dx_dbg_until", System.currentTimeMillis() + 20000L)
+            .putStringSet("dx_dbg_ids", HashSet()).apply()
+    }
+    fun dxDbgPkg(c: Context): String = p(c).getString("dx_dbg_pkg", "") ?: ""
+    fun dxDbgUntil(c: Context): Long = p(c).getLong("dx_dbg_until", 0L)
+    fun dxDbgIds(c: Context): List<String> = (p(c).getStringSet("dx_dbg_ids", emptySet()) ?: emptySet()).toList().sorted()
+    fun dxDbgSave(c: Context, ids: Set<String>) { p(c).edit().putStringSet("dx_dbg_ids", HashSet(ids)).apply() }
+
+    fun setDetoxAppOn(c: Context, pkg: String, v: Boolean) {
+        p(c).edit().putStringSet("dx_apps_on", if (v) detoxAppsOn(c) + pkg else detoxAppsOn(c) - pkg).apply()
+    }
 
     // ---------- Profile ----------
     fun profileName(c: Context): String = p(c).getString("profile_name", "") ?: ""
@@ -239,7 +267,87 @@ class BlockService : AccessibilityService() {
         "root_clips_layout", "clips_video_container"
     )
 
+    private var dxApps: Set<String> = emptySet()
+    private var dxFull: Set<String> = emptySet()
+    private var dbgPkg = ""
+    private var dbgUntil = 0L
+    private var lastDbgUntil = 0L
+    private val dbgIds = HashSet<String>()
+    private var dxCacheAt = 0L
+    private var dxAppAt = 0L
+    private val genericKeys = listOf("reel", "spotlight", "shorts", "short_video", "clips_viewer")
+
+    private fun hitAction(msg: String) {
+        val now = SystemClock.uptimeMillis()
+        if (now - dxLastHit < 2500L) dxHits++ else dxHits = 1
+        dxLastHit = now
+        if (dxHits >= 3) {
+            dxHits = 0
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        } else {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+        }
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    /** Kisi bhi app me Reels/Spotlight jaisi screen dhoondho (view ID ke naam se). */
+    private fun scanGeneric(root: AccessibilityNodeInfo, capture: Boolean): Boolean {
+        var hit = false
+        val q = ArrayDeque<AccessibilityNodeInfo>()
+        q.add(root)
+        var n = 0
+        while (q.isNotEmpty() && n < 800) {
+            val node = q.removeFirst()
+            n++
+            val id = node.viewIdResourceName
+            if (id != null && node.isVisibleToUser) {
+                if (capture && dbgIds.size < 400) dbgIds.add(if (node.isClickable) "$id [click]" else id)
+                if (!hit && !node.isClickable) {
+                    val low = id.lowercase()
+                    if (genericKeys.any { low.contains(it) }) hit = true
+                }
+            }
+            for (i in 0 until node.childCount) {
+                val ch = node.getChild(i)
+                if (ch != null) q.add(ch)
+            }
+        }
+        return hit
+    }
+
     private fun checkDetox(pkg: String) {
+        if (pkg == packageName) return
+        val t0 = SystemClock.uptimeMillis()
+        if (t0 - dxCacheAt > 1500L) {
+            dxCacheAt = t0
+            dxApps = Store.detoxAppsOn(this)
+            dxFull = Store.detoxFull(this)
+            dbgPkg = Store.dxDbgPkg(this)
+            dbgUntil = Store.dxDbgUntil(this)
+            if (dbgUntil != lastDbgUntil) {
+                lastDbgUntil = dbgUntil
+                dbgIds.clear()
+            }
+        }
+        val capture = pkg == dbgPkg && System.currentTimeMillis() < dbgUntil
+        if (pkg in dxApps && pkg in dxFull) {
+            if (t0 - dxAppAt > 800L) {
+                dxAppAt = t0
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                Toast.makeText(this, "Blocked by Detox", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+        if ((pkg in dxApps && pkg !in dxFull) || capture) {
+            if (t0 - dxAt < 350L) return
+            dxAt = t0
+            val root = rootInActiveWindow ?: return
+            if (root.packageName?.toString() != pkg) return
+            val hit = scanGeneric(root, capture)
+            if (capture) Store.dxDbgSave(this, dbgIds)
+            if (hit && pkg in dxApps) hitAction("Reels blocked")
+            return
+        }
         val yt = pkg == "com.google.android.youtube"
         val ig = pkg == "com.instagram.android"
         if (!yt && !ig) return
