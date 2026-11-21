@@ -258,10 +258,39 @@ class MainActivity : Activity() {
         return v
     }
 
+    private fun showSettings() {
+        AlertDialog.Builder(this)
+            .setTitle("Settings")
+            .setItems(arrayOf("Profile", "Theme", "Accessibility settings")) { _, i ->
+                when (i) {
+                    0 -> showProfile()
+                    1 -> toast("Theme: coming soon")
+                    else -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+            }
+            .show()
+    }
+
+    private fun showProfile() {
+        val et = EditText(this)
+        et.hint = "Your name"
+        et.setText(Store.profileName(this))
+        et.isSingleLine = true
+        val box = FrameLayout(this)
+        box.setPadding(dp(20), dp(8), dp(20), 0)
+        box.addView(et, FrameLayout.LayoutParams(MATCH, WRAP))
+        AlertDialog.Builder(this)
+            .setTitle("Profile")
+            .setView(box)
+            .setPositiveButton("Save") { _, _ -> Store.setProfileName(this, et.text.toString()) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun buildHeader(): FrameLayout {
         val f = FrameLayout(this)
         val menu = circleBtn(IconView.MENU) { toast("Coming soon") }
-        val gear = circleBtn(IconView.GEAR) { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        val gear = circleBtn(IconView.GEAR) { showSettings() }
         f.addView(menu, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.START or Gravity.CENTER_VERTICAL))
         f.addView(gear, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END or Gravity.CENTER_VERTICAL))
 
@@ -471,7 +500,7 @@ class MainActivity : Activity() {
     // ---------- Clock colour ----------
     private fun timeColor(min: Int): Int {
         val t = (min / 180f).coerceIn(0f, 1f)
-        val a = Color.parseColor("#5B4A44")
+        val a = Color.parseColor("#FF9F5C")
         val r = (Color.red(a) + (Color.red(C_ORANGE) - Color.red(a)) * t).toInt()
         val g = (Color.green(a) + (Color.green(C_ORANGE) - Color.green(a)) * t).toInt()
         val b = (Color.blue(a) + (Color.blue(C_ORANGE) - Color.blue(a)) * t).toInt()
