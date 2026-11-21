@@ -489,44 +489,57 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         title.gravity = Gravity.CENTER
         val header = FrameLayout(act)
         header.addView(title, FrameLayout.LayoutParams(MATCH, MATCH))
-        val sw = LinearLayout(act)
-        sw.orientation = LinearLayout.HORIZONTAL
-        sw.gravity = Gravity.CENTER_VERTICAL
-        sw.background = cardBg(22)
-        sw.setPadding(dp(14), dp(4), dp(6), dp(4))
+        root.addView(header, LinearLayout.LayoutParams(MATCH, dp(52)))
+
+        // left: big countdown (upar) + manual stopwatch (neeche)
+        val left = LinearLayout(act)
+        left.orientation = LinearLayout.VERTICAL
+        left.background = cardBg(28)
+        left.setPadding(dp(16), dp(16), dp(16), dp(16))
+        clock = PixelClockView(act)
+        left.addView(clock, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+        val swBox = LinearLayout(act)
+        swBox.orientation = LinearLayout.VERTICAL
+        swBox.gravity = Gravity.CENTER
+        swBox.addView(smallLabel("STOPWATCH"), LinearLayout.LayoutParams(MATCH, WRAP))
         timerTv = TextView(act)
-        timerTv.textSize = 15f
+        timerTv.textSize = 46f
         timerTv.setTextColor(Color.WHITE)
         timerTv.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        timerTv.gravity = Gravity.CENTER
         timerTv.text = swText()
-        swBtn = IconView(act, if (Store.swRunning(act)) IconView.PAUSE else IconView.PLAY)
-        swBtn.tint = Color.WHITE
-        swBtn.setPadding(dp(7), dp(7), dp(7), dp(7))
-        swBtn.setOnClickListener {
-            Store.swToggle(act)
-            update()
-        }
+        swBox.addView(timerTv, LinearLayout.LayoutParams(MATCH, WRAP))
+        val swRow = LinearLayout(act)
+        swRow.orientation = LinearLayout.HORIZONTAL
+        swRow.gravity = Gravity.CENTER
         val swReset = IconView(act, IconView.RESET)
         swReset.tint = Color.WHITE
-        swReset.setPadding(dp(8), dp(8), dp(8), dp(8))
+        swReset.setPadding(dp(14), dp(14), dp(14), dp(14))
+        swReset.background = cardBg(40)
         swReset.setOnClickListener {
             Store.swReset(act)
             update()
         }
-        sw.addView(timerTv, LinearLayout.LayoutParams(WRAP, WRAP))
-        val bl = LinearLayout.LayoutParams(dp(34), dp(34))
-        bl.leftMargin = dp(8)
-        sw.addView(swBtn, bl)
-        sw.addView(swReset, LinearLayout.LayoutParams(dp(34), dp(34)))
-        header.addView(sw, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.END or Gravity.CENTER_VERTICAL))
-        root.addView(header, LinearLayout.LayoutParams(MATCH, dp(52)))
-
-        // left: big countdown
-        val left = FrameLayout(act)
-        left.background = cardBg(28)
-        left.setPadding(dp(16), dp(16), dp(16), dp(16))
-        clock = PixelClockView(act)
-        left.addView(clock, FrameLayout.LayoutParams(MATCH, MATCH))
+        swBtn = IconView(act, if (Store.swRunning(act)) IconView.PAUSE else IconView.PLAY)
+        swBtn.tint = Color.WHITE
+        swBtn.setPadding(dp(14), dp(10), dp(14), dp(10))
+        val pill = GradientDrawable()
+        pill.setColor(C_ORANGE)
+        pill.cornerRadius = dp(40).toFloat()
+        swBtn.background = pill
+        swBtn.setOnClickListener {
+            Store.swToggle(act)
+            update()
+        }
+        swRow.addView(swReset, LinearLayout.LayoutParams(dp(56), dp(56)))
+        val pl = LinearLayout.LayoutParams(dp(110), dp(56))
+        pl.leftMargin = dp(14)
+        swRow.addView(swBtn, pl)
+        val rl = LinearLayout.LayoutParams(WRAP, WRAP)
+        rl.topMargin = dp(12)
+        swBox.addView(swRow, rl)
+        left.addView(swBox, LinearLayout.LayoutParams(MATCH, 0, 1f))
 
         // SEC tile
         val secCard = LinearLayout(act)
