@@ -1199,9 +1199,9 @@ class MainActivity : Activity() {
     }
 
     // ---------- Page 4: Detox (block doomscrolling) ----------
-    private val C_DXLEFT = Color.parseColor("#FDEEE8")
-    private val C_DXPANEL = Color.parseColor("#F7E5DF")
-    private val C_DXCARD = Color.parseColor("#FBEDE8")
+    private val C_DXLEFT = Color.parseColor("#FCFAFA")
+    private val C_DXPANEL = Color.parseColor("#EBE6E6")
+    private val C_DXCARD = Color.parseColor("#F3EFEF")
 
     private fun appLabel(pkg: String): String = allApps.firstOrNull { it.pkg == pkg }?.label ?: pkg
 
@@ -1264,7 +1264,7 @@ class MainActivity : Activity() {
         val head = LinearLayout(this)
         head.orientation = LinearLayout.HORIZONTAL
         head.gravity = Gravity.CENTER_VERTICAL
-        head.background = rounded(C_DXCARD, 24)
+        head.background = rounded(C_DXPANEL, 24)
         head.setPadding(dp(14), dp(6), dp(14), dp(6))
         val hi = IconView(this, IconView.INFINITY)
         hi.tint = Color.WHITE
@@ -1326,7 +1326,7 @@ class MainActivity : Activity() {
 
         // Add Apps: tap ya right slide dono
         val addRow = FrameLayout(this)
-        addRow.background = rounded(C_DXCARD, 26)
+        addRow.background = rounded(C_DXPANEL, 26)
         val inner = LinearLayout(this)
         inner.orientation = LinearLayout.HORIZONTAL
         inner.gravity = Gravity.CENTER_VERTICAL
@@ -1334,7 +1334,7 @@ class MainActivity : Activity() {
         val plus = IconView(this, IconView.PLUS)
         plus.tint = C_TXT
         plus.setPadding(dp(14), dp(14), dp(14), dp(14))
-        plus.background = rounded(Color.parseColor("#F9D8CB"), 16)
+        plus.background = rounded(Color.parseColor("#E0DAD9"), 16)
         inner.addView(plus, LinearLayout.LayoutParams(dp(56), dp(56)))
         val at = TextView(this)
         at.text = "Add Apps"
@@ -1380,7 +1380,7 @@ class MainActivity : Activity() {
         val info = LinearLayout(this)
         info.orientation = LinearLayout.HORIZONTAL
         info.gravity = Gravity.CENTER_VERTICAL
-        info.background = rounded(C_DXCARD, 24)
+        info.background = rounded(C_DXPANEL, 24)
         info.setPadding(dp(20), 0, dp(16), 0)
         val ii = IconView(this, IconView.INFO)
         ii.tint = C_TXT
