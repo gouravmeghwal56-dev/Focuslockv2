@@ -1185,6 +1185,18 @@ class HalfScrollView(ctx: Context) : android.widget.ScrollView(ctx) {
 
     private var pendingY = -1
 
+    /** Cards ki height abhi ke size ke hisaab se set karo (list dobara bharne ke baad). */
+    fun fit() {
+        if (height <= 0) return
+        val c = getChildAt(0) as? android.widget.LinearLayout ?: return
+        for (i in 0 until c.childCount) {
+            val v = c.getChildAt(i)
+            val lp = v.layoutParams as android.widget.LinearLayout.LayoutParams
+            lp.height = (height / 2 - m).coerceAtLeast(40)
+            v.layoutParams = lp
+        }
+    }
+
     /** render() page dobara banata hai; naye view me purani scroll position wapas laao. */
     fun restoreScroll(y: Int) { pendingY = y }
 
