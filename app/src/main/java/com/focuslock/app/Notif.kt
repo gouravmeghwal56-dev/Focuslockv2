@@ -77,7 +77,7 @@ object Notif {
             .setWhen(until)
             .setShowWhen(true)
             .setUsesChronometer(true)
-            .setChronometerCountsDown(true)
+            .setChronometerCountDown(true)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_PROGRESS)
