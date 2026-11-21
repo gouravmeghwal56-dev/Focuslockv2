@@ -1,3 +1,3 @@
 <resources>
-    <string name="service_desc">FocusLock sirf ye dekhta hai ki kaun sa app khula hai, taaki focus ke time block kar sake. Screen ka text nahi padhta.</string>
+    <string name="service_desc">FocusLock ye dekhta hai ki kaun sa app khula hai, aur YouTube/Instagram me Shorts ya Reels screen hai ya nahi (sirf screen ke view ID se). Koi text, message ya personal data padhta ya save nahi karta.</string>
 </resources>
