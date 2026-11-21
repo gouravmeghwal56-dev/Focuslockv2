@@ -276,6 +276,29 @@ class BlockService : AccessibilityService() {
     private var dxCacheAt = 0L
     private var dxAppAt = 0L
     private val genericKeys = listOf("reel", "spotlight", "shorts", "short_video", "clips_viewer")
+    // Chat / DM screen ke ids: inme hum Reels-block nahi karte (chat khulne do)
+    private val chatKeys = listOf("direct_", "thread_composer", "message_list", "inbox", "chat_")
+
+    /** Chat/DM screen khuli hai? (view ID ke naam se) */
+    private fun inChat(root: AccessibilityNodeInfo): Boolean {
+        val q = ArrayDeque<AccessibilityNodeInfo>()
+        q.add(root)
+        var n = 0
+        while (q.isNotEmpty() && n < 800) {
+            val node = q.removeFirst()
+            n++
+            val id = node.viewIdResourceName
+            if (id != null && node.isVisibleToUser) {
+                val low = id.lowercase()
+                if (chatKeys.any { low.contains(it) }) return true
+            }
+            for (i in 0 until node.childCount) {
+                val ch = node.getChild(i)
+                if (ch != null) q.add(ch)
+            }
+        }
+        return false
+    }
 
     private fun hitAction(msg: String) {
         val now = SystemClock.uptimeMillis()
@@ -290,6 +313,17 @@ class BlockService : AccessibilityService() {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
+    /** Node ya uske 2 level neeche ke bacchon me koi selected hai? (Snapchat nav tab ke liye) */
+    private fun selectedDeep(node: AccessibilityNodeInfo, depth: Int): Boolean {
+        if (node.isSelected || node.isChecked) return true
+        if (depth <= 0) return false
+        for (i in 0 until node.childCount) {
+            val ch = node.getChild(i) ?: continue
+            if (selectedDeep(ch, depth - 1)) return true
+        }
+        return false
+    }
+
     /** Kisi bhi app me Reels/Spotlight jaisi screen dhoondho (view ID ke naam se). */
     private fun scanGeneric(root: AccessibilityNodeInfo, capture: Boolean): Boolean {
         var hit = false
@@ -301,11 +335,18 @@ class BlockService : AccessibilityService() {
             n++
             val id = node.viewIdResourceName
             if (id != null && node.isVisibleToUser) {
-                if (capture && dbgIds.size < 400) dbgIds.add(if (node.isClickable) "$id [click]" else id)
+                if (capture && dbgIds.size < 400) dbgIds.add(id + (if (node.isClickable) " [click]" else "") + (if (node.isSelected) " [sel]" else ""))
+                // Snapchat: bottom bar me Spotlight tab selected ho to Spotlight khuli hai
+                if (!hit && id.endsWith("ngs_spotlight_icon_container") && selectedDeep(node, 2)) hit = true
                 if (!hit && !node.isClickable) {
                     val low = id.lowercase()
                     if (genericKeys.any { low.contains(it) }) hit = true
                 }
+            }
+            // Fallback: jin apps me view ID nahi hote (Snapchat), selected tab ka naam dekho
+            if (!hit && node.isSelected && node.isVisibleToUser) {
+                val label = ((node.contentDescription?.toString() ?: "") + " " + (node.text?.toString() ?: "")).lowercase()
+                if (label.contains("spotlight") || label.contains("reels") || label.contains("shorts")) hit = true
             }
             for (i in 0 until node.childCount) {
                 val ch = node.getChild(i)
@@ -345,7 +386,7 @@ class BlockService : AccessibilityService() {
             if (root.packageName?.toString() != pkg) return
             val hit = scanGeneric(root, capture)
             if (capture) Store.dxDbgSave(this, dbgIds)
-            if (hit && pkg in dxApps) hitAction("Reels blocked")
+            if (hit && pkg in dxApps && !inChat(root)) hitAction("Reels blocked")
             return
         }
         val yt = pkg == "com.google.android.youtube"
@@ -367,6 +408,7 @@ class BlockService : AccessibilityService() {
             }
         }
         if (!hit) return
+        if (inChat(root)) return
         if (now - dxLastHit < 2500L) dxHits++ else dxHits = 1
         dxLastHit = now
         if (dxHits >= 3) {
