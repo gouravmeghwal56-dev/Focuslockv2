@@ -409,6 +409,14 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     private lateinit var clock: PixelClockView
     private lateinit var secView: PixelNumberView
     private lateinit var endsTv: TextView
+    private lateinit var timerTv: TextView
+    private lateinit var swBtn: IconView
+    private var lastSwRunning = false
+
+    private fun swText(): String {
+        val s = Store.swElapsed(act) / 1000L
+        return String.format("%d:%02d:%02d", s / 3600L, (s % 3600L) / 60L, s % 60L)
+    }
     private lateinit var chuteTv: TextView
     private var lastSec = -1
     private var lastUntil = 0L
@@ -479,7 +487,39 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         title.setTextColor(Color.WHITE)
         title.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         title.gravity = Gravity.CENTER
-        root.addView(title, LinearLayout.LayoutParams(MATCH, dp(52)))
+        val header = FrameLayout(act)
+        header.addView(title, FrameLayout.LayoutParams(MATCH, MATCH))
+        val sw = LinearLayout(act)
+        sw.orientation = LinearLayout.HORIZONTAL
+        sw.gravity = Gravity.CENTER_VERTICAL
+        sw.background = cardBg(22)
+        sw.setPadding(dp(14), dp(4), dp(6), dp(4))
+        timerTv = TextView(act)
+        timerTv.textSize = 15f
+        timerTv.setTextColor(Color.WHITE)
+        timerTv.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        timerTv.text = swText()
+        swBtn = IconView(act, if (Store.swRunning(act)) IconView.PAUSE else IconView.PLAY)
+        swBtn.tint = Color.WHITE
+        swBtn.setPadding(dp(7), dp(7), dp(7), dp(7))
+        swBtn.setOnClickListener {
+            Store.swToggle(act)
+            update()
+        }
+        val swReset = IconView(act, IconView.RESET)
+        swReset.tint = Color.WHITE
+        swReset.setPadding(dp(8), dp(8), dp(8), dp(8))
+        swReset.setOnClickListener {
+            Store.swReset(act)
+            update()
+        }
+        sw.addView(timerTv, LinearLayout.LayoutParams(WRAP, WRAP))
+        val bl = LinearLayout.LayoutParams(dp(34), dp(34))
+        bl.leftMargin = dp(8)
+        sw.addView(swBtn, bl)
+        sw.addView(swReset, LinearLayout.LayoutParams(dp(34), dp(34)))
+        header.addView(sw, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.END or Gravity.CENTER_VERTICAL))
+        root.addView(header, LinearLayout.LayoutParams(MATCH, dp(52)))
 
         // left: big countdown
         val left = FrameLayout(act)
@@ -650,6 +690,13 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         val until = Store.until(act)
         val remSec = ((until - now) / 1000L).coerceAtLeast(0L)
         clock.show((remSec / 60L).toInt(), Color.WHITE)
+        timerTv.text = swText()
+        val swOn = Store.swRunning(act)
+        if (swOn != lastSwRunning) {
+            lastSwRunning = swOn
+            swBtn.kind = if (swOn) IconView.PAUSE else IconView.PLAY
+            swBtn.invalidate()
+        }
 
         val sec = (remSec % 60L).toInt()
         if (sec != lastSec) {
