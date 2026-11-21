@@ -9,6 +9,7 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
+import android.graphics.Typeface
 import android.graphics.RectF
 import android.graphics.Shader
 import android.view.MotionEvent
@@ -55,6 +56,10 @@ class IconView(ctx: Context, var kind: Int) : View(ctx) {
         const val DOWN = 11
         const val DETOX = 12
         const val PAUSE = 13
+        const val INFINITY = 14
+        const val INFO = 15
+        const val PLUS = 16
+        const val CHEVRON = 17
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -169,6 +174,35 @@ class IconView(ctx: Context, var kind: Int) : View(ctx) {
                 path.moveTo(x(6f), y(15f))
                 path.lineTo(x(12f), y(9f))
                 path.lineTo(x(18f), y(15f))
+                canvas.drawPath(path, p)
+            }
+            INFINITY -> {
+                p.strokeWidth = 2.6f * u
+                path.reset()
+                path.moveTo(x(12f), y(12f))
+                path.cubicTo(x(9f), y(6.5f), x(3f), y(6.5f), x(3f), y(12f))
+                path.cubicTo(x(3f), y(17.5f), x(9f), y(17.5f), x(12f), y(12f))
+                path.cubicTo(x(15f), y(6.5f), x(21f), y(6.5f), x(21f), y(12f))
+                path.cubicTo(x(21f), y(17.5f), x(15f), y(17.5f), x(12f), y(12f))
+                canvas.drawPath(path, p)
+            }
+            INFO -> {
+                canvas.drawCircle(x(12f), y(12f), 9.5f * u, p)
+                canvas.drawLine(x(12f), y(11f), x(12f), y(17f), p)
+                p.style = Paint.Style.FILL
+                canvas.drawCircle(x(12f), y(7.6f), 1.3f * u, p)
+            }
+            PLUS -> {
+                p.strokeWidth = 2.8f * u
+                canvas.drawLine(x(12f), y(5f), x(12f), y(19f), p)
+                canvas.drawLine(x(5f), y(12f), x(19f), y(12f), p)
+            }
+            CHEVRON -> {
+                p.strokeWidth = 2.4f * u
+                path.reset()
+                path.moveTo(x(9f), y(5f))
+                path.lineTo(x(16f), y(12f))
+                path.lineTo(x(9f), y(19f))
                 canvas.drawPath(path, p)
             }
             PAUSE -> {
@@ -925,12 +959,8 @@ class HRulerView(ctx: Context, startValue: Int, private val onChange: (Int) -> U
     }
 }
 
-/** Two "phones" (Shorts / Reels). Orange + slash = blocked, gray = allowed. */
-class DetoxView(ctx: Context) : AssembleView(ctx) {
-    var shorts = false
-        set(v) { field = v; invalidate() }
-    var reels = false
-        set(v) { field = v; invalidate() }
+/** Detox illustration: phone with a crossed-out clapperboard (pixel-assemble animation supported). */
+class DetoxArtView(ctx: Context) : AssembleView(ctx) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
     private val path = Path()
@@ -938,43 +968,229 @@ class DetoxView(ctx: Context) : AssembleView(ctx) {
     override fun drawContent(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        val cw = w / 2f
-        for (i in 0..1) {
-            val on = if (i == 0) shorts else reels
-            val ph = minOf(h * 0.62f, cw * 1.1f)
-            val pw = ph * 0.56f
-            val cx = cw * i + cw / 2f
-            val cy = h * 0.46f
-            paint.style = Paint.Style.FILL
-            paint.color = if (on) C_ORANGE else Color.parseColor("#7A706D")
-            rect.set(cx - pw / 2f, cy - ph / 2f, cx + pw / 2f, cy + ph / 2f)
-            canvas.drawRoundRect(rect, pw * 0.16f, pw * 0.16f, paint)
-            paint.color = Color.WHITE
-            val s = pw * 0.2f
+        val ph = minOf(h * 0.82f, w * 0.95f)
+        val pw = ph * 0.56f
+        val cx = w / 2f
+        val top = h * 0.12f
+        val cy = top + ph / 2f
+
+        // soft blob + floor shadow
+        paint.style = Paint.Style.FILL
+        paint.color = Color.parseColor("#F9DCD0")
+        rect.set(cx - pw * 1.45f, top + ph * 0.34f, cx + pw * 1.05f, top + ph * 0.96f)
+        canvas.drawOval(rect, paint)
+        paint.color = Color.parseColor("#F5D2C4")
+        rect.set(cx - pw * 0.85f, top + ph * 0.985f, cx + pw * 0.85f, top + ph * 1.045f)
+        canvas.drawOval(rect, paint)
+
+        // phone
+        val sw = pw * 0.075f
+        rect.set(cx - pw / 2f, top, cx + pw / 2f, top + ph)
+        paint.color = Color.parseColor("#FDEFEA")
+        canvas.drawRoundRect(rect, pw * 0.2f, pw * 0.2f, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = sw
+        paint.color = Color.parseColor("#171515")
+        canvas.drawRoundRect(rect, pw * 0.2f, pw * 0.2f, paint)
+        paint.style = Paint.Style.FILL
+        canvas.drawCircle(cx, top + ph * 0.075f, pw * 0.032f, paint)
+
+        // sparks (top right)
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = pw * 0.06f
+        paint.color = C_ORANGE
+        val ox = cx + pw * 0.62f
+        val oy = top + ph * 0.02f
+        val angles = floatArrayOf(-78f, -48f, -18f)
+        for (a in angles) {
+            val r = Math.toRadians(a.toDouble())
+            val c0 = Math.cos(r).toFloat()
+            val s0 = Math.sin(r).toFloat()
+            canvas.drawLine(ox + c0 * pw * 0.20f, oy + s0 * pw * 0.20f, ox + c0 * pw * 0.42f, oy + s0 * pw * 0.42f, paint)
+        }
+
+        // clapperboard
+        val cw = pw * 0.66f
+        val ch = cw * 0.78f
+        val l = cx - cw / 2f
+        val r = cx + cw / 2f
+        val t = cy - ch / 2f
+        val b = cy + ch / 2f
+        paint.style = Paint.Style.FILL
+        paint.color = Color.parseColor("#3A3837")
+        rect.set(l, t + ch * 0.26f, r, b)
+        canvas.drawRoundRect(rect, cw * 0.1f, cw * 0.1f, paint)
+        rect.set(l, t, r, t + ch * 0.27f)
+        canvas.drawRoundRect(rect, cw * 0.07f, cw * 0.07f, paint)
+        paint.color = Color.parseColor("#F2F2F2")
+        val sx = cw * 0.12f
+        for (i in 0..2) {
+            val x0 = l + cw * 0.10f + i * cw * 0.30f
             path.reset()
-            path.moveTo(cx - s * 0.6f, cy - s)
-            path.lineTo(cx + s, cy)
-            path.lineTo(cx - s * 0.6f, cy + s)
+            path.moveTo(x0, t + ch * 0.22f)
+            path.lineTo(x0 + sx, t + ch * 0.05f)
+            path.lineTo(x0 + sx + cw * 0.14f, t + ch * 0.05f)
+            path.lineTo(x0 + cw * 0.14f, t + ch * 0.22f)
             path.close()
             canvas.drawPath(path, paint)
-            if (on) {
-                paint.style = Paint.Style.STROKE
-                paint.strokeCap = Paint.Cap.ROUND
-                paint.strokeWidth = pw * 0.2f
-                paint.color = C_BG
-                canvas.drawLine(cx - pw * 0.7f, cy + ph * 0.42f, cx + pw * 0.7f, cy - ph * 0.42f, paint)
-                paint.strokeWidth = pw * 0.1f
-                paint.color = C_DARK
-                canvas.drawLine(cx - pw * 0.7f, cy + ph * 0.42f, cx + pw * 0.7f, cy - ph * 0.42f, paint)
-                paint.style = Paint.Style.FILL
+        }
+        // play triangle
+        paint.color = Color.parseColor("#EDEDED")
+        val ts = cw * 0.17f
+        path.reset()
+        path.moveTo(cx - ts * 0.6f, cy + ch * 0.08f - ts)
+        path.lineTo(cx + ts, cy + ch * 0.08f)
+        path.lineTo(cx - ts * 0.6f, cy + ch * 0.08f + ts)
+        path.close()
+        canvas.drawPath(path, paint)
+
+        // slash
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        val x1 = l - cw * 0.04f
+        val y1 = b + ch * 0.04f
+        val x2 = r + cw * 0.02f
+        val y2 = t - ch * 0.05f
+        paint.strokeWidth = pw * 0.15f
+        paint.color = Color.parseColor("#FDEFEA")
+        canvas.drawLine(x1, y1, x2, y2, paint)
+        paint.strokeWidth = pw * 0.075f
+        paint.color = C_ORANGE
+        canvas.drawLine(x1, y1, x2, y2, paint)
+    }
+}
+
+/** Rotating quotes: auto-swipe every 5s, user can swipe too. Dots show the position. */
+class QuoteView(ctx: Context) : View(ctx) {
+    private val quotes = arrayOf(
+        "Own Your Mind," to "Leave Scrolls Behind.",
+        "Less Feed," to "More Deed.",
+        "Don't Just Scroll," to "Take Control.",
+        "Feed Your Mind," to "Not the Grind."
+    )
+    private val dens = ctx.resources.displayMetrics.density
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var idx = 0
+    private var t = 1f
+    private var from = 0
+    private var dir = 1
+    private var anim: ValueAnimator? = null
+    private var size = 40f
+    private var downX = 0f
+    private val auto = object : Runnable {
+        override fun run() {
+            if (isShown) go(1)
+            postDelayed(this, 5000L)
+        }
+    }
+
+    init {
+        paint.typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
+        paint.textAlign = Paint.Align.CENTER
+    }
+
+    private fun go(d: Int) {
+        val n = quotes.size
+        from = idx
+        idx = (idx + d + n) % n
+        dir = d
+        anim?.cancel()
+        t = 0f
+        val a = ValueAnimator.ofFloat(0f, 1f)
+        a.duration = 450
+        a.interpolator = DecelerateInterpolator(1.8f)
+        a.addUpdateListener {
+            t = it.animatedValue as Float
+            invalidate()
+        }
+        a.start()
+        anim = a
+    }
+
+    private fun restart() {
+        removeCallbacks(auto)
+        postDelayed(auto, 5000L)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        postDelayed(auto, 5000L)
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(auto)
+        anim?.cancel()
+        super.onDetachedFromWindow()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        super.onSizeChanged(w, h, ow, oh)
+        var sz = minOf(w * 0.11f, h * 0.27f)
+        paint.textSize = sz
+        var widest = 0f
+        for (q in quotes) widest = maxOf(widest, paint.measureText(q.first), paint.measureText(q.second))
+        if (widest > w * 0.92f) sz *= (w * 0.92f) / widest
+        size = sz
+    }
+
+    private fun drawQuote(c: Canvas, i: Int, dx: Float, alpha: Int) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        paint.textSize = size
+        val y1 = h * 0.34f
+        paint.color = Color.argb(alpha, 17, 17, 17)
+        c.drawText(quotes[i].first, w / 2f + dx, y1, paint)
+        paint.color = Color.argb(alpha, Color.red(C_ORANGE), Color.green(C_ORANGE), Color.blue(C_ORANGE))
+        c.drawText(quotes[i].second, w / 2f + dx, y1 + size * 1.15f, paint)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        if (t < 1f) {
+            drawQuote(canvas, from, -dir * t * w * 0.6f, ((1f - t) * 255).toInt())
+            drawQuote(canvas, idx, dir * (1f - t) * w * 0.6f, (t * 255).toInt())
+        } else {
+            drawQuote(canvas, idx, 0f, 255)
+        }
+        val r = dens * 5f
+        val gap = dens * 14f
+        val total = (quotes.size - 1) * gap
+        for (i in quotes.indices) {
+            paint.color = if (i == idx) C_ORANGE else Color.parseColor("#F3D7CC")
+            canvas.drawCircle(w / 2f - total / 2f + i * gap, h - dens * 14f, r, paint)
+        }
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.action) {
+            MotionEvent.ACTION_DOWN -> downX = e.x
+            MotionEvent.ACTION_UP -> {
+                val dx = e.x - downX
+                if (Math.abs(dx) > dens * 40f) {
+                    go(if (dx < 0) 1 else -1)
+                    restart()
+                }
             }
-            // little squares under each phone
-            val sq = pw * 0.16f
-            paint.color = if (on) C_ORANGE else Color.parseColor("#7A706D")
-            for (k in 0..2) {
-                val sx = cx - sq * 2.6f / 2f * 1.0f + k * sq * 1.3f - sq * 0.5f + sq * 0.0f
-                canvas.drawRect(sx, cy + ph / 2f + sq, sx + sq, cy + ph / 2f + sq * 2f, paint)
-            }
+        }
+        return true
+    }
+}
+
+/** ScrollView whose children are exactly half its height, so 2 cards show and more can be swiped. */
+class HalfScrollView(ctx: Context) : android.widget.ScrollView(ctx) {
+    private val m = (12 * ctx.resources.displayMetrics.density).toInt()
+
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        super.onSizeChanged(w, h, ow, oh)
+        val c = getChildAt(0) as? android.widget.LinearLayout ?: return
+        for (i in 0 until c.childCount) {
+            val v = c.getChildAt(i)
+            val lp = v.layoutParams as android.widget.LinearLayout.LayoutParams
+            lp.height = (h / 2 - m).coerceAtLeast(40)
+            v.layoutParams = lp
         }
     }
 }
