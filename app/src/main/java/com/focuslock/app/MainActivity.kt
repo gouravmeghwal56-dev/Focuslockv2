@@ -507,8 +507,9 @@ class MainActivity : Activity() {
 
     // ---------- Clock colour ----------
     private fun timeColor(min: Int): Int {
+        // kam time = grey, jaise time badhta hai orange hota jaata hai (180 min pe poora orange)
         val t = (min / 180f).coerceIn(0f, 1f)
-        val a = Color.parseColor("#FF9F5C")
+        val a = C_GRAY
         val r = (Color.red(a) + (Color.red(C_ORANGE) - Color.red(a)) * t).toInt()
         val g = (Color.green(a) + (Color.green(C_ORANGE) - Color.green(a)) * t).toInt()
         val b = (Color.blue(a) + (Color.blue(C_ORANGE) - Color.blue(a)) * t).toInt()
@@ -615,7 +616,7 @@ class MainActivity : Activity() {
         val rl = ruler ?: return
         rulerAnim?.cancel()
         val from = rulerShown
-        val to = target.toFloat().coerceAtLeast(5f)
+        val to = target.toFloat().coerceAtLeast(1f)
         if (Math.abs(to - from) < 0.5f) {
             rulerShown = to
             rl.setMinutes(target)
@@ -655,7 +656,7 @@ class MainActivity : Activity() {
             lockedToast()
             return
         }
-        durMin = (((durMin + d) / 5) * 5).coerceIn(5, 1440)
+        durMin = (durMin + d).coerceIn(1, 1440)
         refreshDur(false)
         updateLeft()
     }
@@ -1548,6 +1549,7 @@ class MainActivity : Activity() {
 
     private fun exitFocus() {
         focus = null
+        Ambient.stop()
         val lp = window.attributes
         lp.screenBrightness = -1f
         window.attributes = lp
@@ -1592,6 +1594,11 @@ class MainActivity : Activity() {
         syncFocus()
         ui.removeCallbacks(tick)
         ui.postDelayed(tick, 1000)
+    }
+
+    override fun onDestroy() {
+        Ambient.stop()
+        super.onDestroy()
     }
 
     override fun onPause() {
