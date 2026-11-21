@@ -1249,7 +1249,9 @@ class MainActivity : Activity() {
         return card
     }
 
-    private var dxScrollY = 0
+    // ScrollView aur list ek hi rehte hain, render() par sirf cards dobara bharte hain -> scroll position nahi hilti
+    private var dxSv: HalfScrollView? = null
+    private var dxList: LinearLayout? = null
 
     private fun detoxPage(): View {
         val col = vbox()
@@ -1286,23 +1288,34 @@ class MainActivity : Activity() {
         col.addView(head, hl)
 
         // list of cards (2 visible, swipe up/down for more)
-        val list = LinearLayout(this)
-        list.orientation = LinearLayout.VERTICAL
+        val sv = dxSv ?: HalfScrollView(this).also {
+            it.isVerticalScrollBarEnabled = false
+            dxSv = it
+        }
+        val list = dxList ?: LinearLayout(this).also {
+            it.orientation = LinearLayout.VERTICAL
+            dxList = it
+        }
+        list.removeAllViews()
         fun addCard(v: View) {
             val lp = LinearLayout.LayoutParams(MATCH, dp(200))
             lp.setMargins(0, dp(6), 0, dp(6))
             list.addView(v, lp)
         }
-        addCard(detoxCard("YouTube Shorts", "com.google.android.youtube", Store.detoxShorts(this), null, null) {
-            Store.setDetoxShorts(this, !Store.detoxShorts(this))
-            render()
-            updateLeft()
-        })
-        addCard(detoxCard("Instagram Reels", "com.instagram.android", Store.detoxReels(this), null, null) {
-            Store.setDetoxReels(this, !Store.detoxReels(this))
-            render()
-            updateLeft()
-        })
+        if (icon("com.google.android.youtube") != null) {
+            addCard(detoxCard("YouTube Shorts", "com.google.android.youtube", Store.detoxShorts(this), null, null) {
+                Store.setDetoxShorts(this, !Store.detoxShorts(this))
+                render()
+                updateLeft()
+            })
+        }
+        if (icon("com.instagram.android") != null) {
+            addCard(detoxCard("Instagram Reels", "com.instagram.android", Store.detoxReels(this), null, null) {
+                Store.setDetoxReels(this, !Store.detoxReels(this))
+                render()
+                updateLeft()
+            })
+        }
         val on = Store.detoxAppsOn(this)
         val full = Store.detoxFull(this)
         for (pkg in Store.detoxApps(this).sortedBy { appLabel(it).lowercase() }) {
@@ -1317,11 +1330,9 @@ class MainActivity : Activity() {
                 updateLeft()
             })
         }
-        val sv = HalfScrollView(this)
-        sv.isVerticalScrollBarEnabled = false
-        sv.addView(list, FrameLayout.LayoutParams(MATCH, WRAP))
-        sv.restoreScroll(dxScrollY)
-        sv.setOnScrollChangeListener { _, _, y, _, _ -> dxScrollY = y }
+        (sv.parent as? android.view.ViewGroup)?.removeView(sv)
+        if (list.parent == null) sv.addView(list, FrameLayout.LayoutParams(MATCH, WRAP))
+        sv.fit()
         val panel = LinearLayout(this)
         panel.orientation = LinearLayout.VERTICAL
         panel.background = rounded(C_DXPANEL, 28)
