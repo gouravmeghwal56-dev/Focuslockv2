@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.provider.Settings
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -25,13 +26,13 @@ object Notif {
         val m = nm(c)
         if (m.getNotificationChannel(CH_SESSION) == null) {
             val ch = NotificationChannel(CH_SESSION, "Focus session", NotificationManager.IMPORTANCE_LOW)
-            ch.description = "Session chalte time timer dikhata hai"
+            ch.description = "Shows the running focus session and time left"
             ch.setShowBadge(false)
             m.createNotificationChannel(ch)
         }
         if (m.getNotificationChannel(CH_SETUP) == null) {
-            val ch = NotificationChannel(CH_SETUP, "Setup / permission", NotificationManager.IMPORTANCE_HIGH)
-            ch.description = "Accessibility ya permission ON karne ka reminder"
+            val ch = NotificationChannel(CH_SETUP, "Setup & permissions", NotificationManager.IMPORTANCE_HIGH)
+            ch.description = "Reminders to turn on Accessibility or other permissions"
             m.createNotificationChannel(ch)
         }
     }
@@ -69,11 +70,12 @@ object Notif {
         postedUntil = until
         channels(c)
         val ends = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(until)).lowercase()
-        val mode = if (Store.allowMode(c)) "Sirf bag ke apps chalenge" else "Bag ke apps band hain"
+        val mode = if (Store.allowMode(c)) "Only your Bag apps are allowed" else "Your Bag apps are blocked"
         val n = Notification.Builder(c, CH_SESSION)
             .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
-            .setContentTitle("Focus session chal raha hai")
-            .setContentText("Khatam hoga $ends  \u00B7  $mode")
+            .setColor(Color.parseColor("#FF6A0A"))
+            .setContentTitle("Focus session running")
+            .setContentText("Ends at $ends  \u00B7  $mode")
             .setWhen(until)
             .setShowWhen(true)
             .setUsesChronometer(true)
@@ -92,13 +94,18 @@ object Notif {
         channels(c)
         val n = Notification.Builder(c, CH_SETUP)
             .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
-            .setContentTitle("FocusLock: Accessibility OFF hai")
-            .setContentText("Blocking tabhi chalegi jab ON karoge. Tap karo, seedha settings khulegi.")
-            .setStyle(Notification.BigTextStyle().bigText("Accessibility me FocusLock ko ON karo, tabhi apps, Shorts aur Reels block honge. Tap karo, seedha settings khulegi."))
+            .setColor(Color.parseColor("#FF6A0A"))
+            .setContentTitle("Turn on Accessibility")
+            .setContentText("FocusLock needs it to block apps, Shorts and Reels.")
+            .setStyle(
+                Notification.BigTextStyle().bigText(
+                    "FocusLock needs Accessibility access to block apps, YouTube Shorts and Instagram Reels. Tap to open settings and switch it on."
+                )
+            )
             .setCategory(Notification.CATEGORY_RECOMMENDATION)
             .setAutoCancel(true)
             .setContentIntent(openAccessibility(c))
-            .addAction(Notification.Action.Builder(null, "Turn ON", openAccessibility(c)).build())
+            .addAction(Notification.Action.Builder(null, "Turn on", openAccessibility(c)).build())
             .build()
         nm(c).notify(ID_SETUP, n)
     }
