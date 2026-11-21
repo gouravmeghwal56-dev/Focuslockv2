@@ -1183,6 +1183,25 @@ class QuoteView(ctx: Context) : View(ctx) {
 class HalfScrollView(ctx: Context) : android.widget.ScrollView(ctx) {
     private val m = (12 * ctx.resources.displayMetrics.density).toInt()
 
+    private var pendingY = -1
+
+    /** render() page dobara banata hai; naye view me purani scroll position wapas laao. */
+    fun restoreScroll(y: Int) { pendingY = y }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        super.onLayout(changed, l, t, r, b)
+        if (pendingY >= 0 && height > 0) {
+            val first = (getChildAt(0) as? android.widget.LinearLayout)?.getChildAt(0)
+            val want = (height / 2 - m).coerceAtLeast(40)
+            // cards ki height set hone ke baad hi scroll karo, warna clamp ho jata hai
+            if (first != null && first.height == want) {
+                val y = pendingY
+                pendingY = -1
+                scrollTo(0, y)
+            }
+        }
+    }
+
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         super.onSizeChanged(w, h, ow, oh)
         val c = getChildAt(0) as? android.widget.LinearLayout ?: return
