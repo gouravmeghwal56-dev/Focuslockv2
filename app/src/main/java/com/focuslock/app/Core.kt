@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
@@ -18,12 +19,44 @@ object Store {
     private fun p(c: Context) = c.getSharedPreferences("focus", Context.MODE_PRIVATE)
 
     // ---------- Bags (3 app lists) ----------
-    fun activeBag(c: Context) = p(c).getInt("bag_active", 0)
-    fun setActiveBag(c: Context, i: Int) { p(c).edit().putInt("bag_active", i).apply() }
+    // Abhi sirf Bag 1 chalta hai (max 4 apps). Bag 2 aur 3 locked hain, future me padhai ke apps ke liye.
+    const val MAX_BAG_APPS = 4
+    const val UNLOCKED_BAGS = 1
+    fun activeBag(c: Context) = 0
+    fun setActiveBag(c: Context, i: Int) { p(c).edit().putInt("bag_active", 0).apply() }
     private fun bagKey(i: Int) = if (i == 0) "sel" else "sel$i"
-    fun bag(c: Context, i: Int): Set<String> = HashSet(p(c).getStringSet(bagKey(i), emptySet()) ?: emptySet())
-    fun setBag(c: Context, i: Int, s: Set<String>) { p(c).edit().putStringSet(bagKey(i), HashSet(s)).apply() }
+    fun bag(c: Context, i: Int): Set<String> {
+        val all = HashSet(p(c).getStringSet(bagKey(i), emptySet()) ?: emptySet())
+        return if (i == 0) all.toList().sorted().take(MAX_BAG_APPS).toSet() else all
+    }
+    fun setBag(c: Context, i: Int, s: Set<String>) {
+        val v = if (i == 0) s.toList().sorted().take(MAX_BAG_APPS).toSet() else s
+        p(c).edit().putStringSet(bagKey(i), HashSet(v)).apply()
+    }
     fun selected(c: Context): Set<String> = bag(c, activeBag(c))
+
+    // ---------- Detox (sirf Shorts / Reels band, baaki sab chalega) ----------
+    fun detoxShorts(c: Context) = p(c).getBoolean("dx_shorts", false)
+    fun setDetoxShorts(c: Context, v: Boolean) { p(c).edit().putBoolean("dx_shorts", v).apply() }
+    fun detoxReels(c: Context) = p(c).getBoolean("dx_reels", false)
+    fun setDetoxReels(c: Context, v: Boolean) { p(c).edit().putBoolean("dx_reels", v).apply() }
+
+    // ---------- Manual stopwatch (black screen, top right) ----------
+    fun swRunning(c: Context) = p(c).getLong("sw_start", 0L) > 0L
+    fun swElapsed(c: Context): Long {
+        val st = p(c).getLong("sw_start", 0L)
+        val base = p(c).getLong("sw_base", 0L)
+        return if (st > 0L) base + (System.currentTimeMillis() - st).coerceAtLeast(0L) else base
+    }
+    fun swToggle(c: Context) {
+        val e = swElapsed(c)
+        if (swRunning(c)) {
+            p(c).edit().putLong("sw_base", e).putLong("sw_start", 0L).apply()
+        } else {
+            p(c).edit().putLong("sw_base", e).putLong("sw_start", System.currentTimeMillis()).apply()
+        }
+    }
+    fun swReset(c: Context) { p(c).edit().putLong("sw_base", 0L).putLong("sw_start", 0L).apply() }
 
     // ---------- Mode ----------
     fun allowMode(c: Context) = p(c).getBoolean("allow", false)
@@ -117,11 +150,14 @@ object Store {
     }
     fun dayMinutes(c: Context, y: Int, m: Int, d: Int): Long = p(c).getLong(dayKey(y, m, d), 0L)
 
+    fun anyRoutineOn(c: Context) = (0..2).any { rtOn(c, it) }
+
     fun active(c: Context) = sessionOn(c) || inSchedule(c)
 }
 
 class BlockService : AccessibilityService() {
     private var lastAt = 0L
+    private var homeAt = 0L
     private val handler = Handler(Looper.getMainLooper())
 
     // Phone / emergency apps hamesha chalenge
@@ -158,10 +194,21 @@ class BlockService : AccessibilityService() {
 
     override fun onAccessibilityEvent(e: AccessibilityEvent?) {
         val pkg = e?.packageName?.toString() ?: return
+        checkDetox(pkg)
+        if (e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         if (pkg == packageName || pkg in alwaysOk) return
         if (!Store.active(this)) return
         if (pkg in emergency) return
-        if (pkg == homePkg() || pkg == imePkg()) return
+        // Session chal raha ho aur home screen aaye to wapas black focus screen pe bhej do
+        if (pkg == homePkg()) {
+            val t = System.currentTimeMillis()
+            if (Store.sessionOn(this) && t - homeAt > 800L) {
+                homeAt = t
+                handler.postDelayed({ if (Store.sessionOn(this)) openFocus() }, 150L)
+            }
+            return
+        }
+        if (pkg == imePkg()) return
 
         val sel = Store.selected(this)
         var block = if (Store.allowMode(this)) pkg !in sel else pkg in sel
@@ -174,6 +221,49 @@ class BlockService : AccessibilityService() {
         performGlobalAction(GLOBAL_ACTION_HOME)
         Toast.makeText(this, "Focus mode ON", Toast.LENGTH_SHORT).show()
         if (Store.sessionOn(this)) handler.postDelayed({ openFocus() }, 250L)
+    }
+
+    // ---------- Detox: YouTube Shorts / Instagram Reels ----------
+    private var dxAt = 0L
+    private var dxLastHit = 0L
+    private var dxHits = 0
+    private val ytIds = listOf(
+        "reel_recycler", "reel_player_page_container", "reel_watch_fragment_root", "shorts_player_page_container"
+    )
+    private val igIds = listOf(
+        "clips_viewer_view_pager", "clips_viewer_container", "clips_swipe_refresh_container",
+        "root_clips_layout", "clips_video_container"
+    )
+
+    private fun checkDetox(pkg: String) {
+        val yt = pkg == "com.google.android.youtube"
+        val ig = pkg == "com.instagram.android"
+        if (!yt && !ig) return
+        if (yt && !Store.detoxShorts(this)) return
+        if (ig && !Store.detoxReels(this)) return
+        val now = SystemClock.uptimeMillis()
+        if (now - dxAt < 350L) return
+        dxAt = now
+        val root = rootInActiveWindow ?: return
+        if (root.packageName?.toString() != pkg) return
+        var hit = false
+        for (n in if (yt) ytIds else igIds) {
+            val l = root.findAccessibilityNodeInfosByViewId("$pkg:id/$n")
+            if (l != null && l.any { it.isVisibleToUser }) {
+                hit = true
+                break
+            }
+        }
+        if (!hit) return
+        if (now - dxLastHit < 2500L) dxHits++ else dxHits = 1
+        dxLastHit = now
+        if (dxHits >= 3) {
+            dxHits = 0
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        } else {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+        }
+        Toast.makeText(this, if (yt) "Shorts blocked" else "Reels blocked", Toast.LENGTH_SHORT).show()
     }
 
     // Blocked app khulte hi black focus screen samne aaye
@@ -198,6 +288,19 @@ class BlockService : AccessibilityService() {
     private fun imePkg(): String? {
         val id = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
         return id?.substringBefore('/')
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        Notif.cancelSetup(this)
+    }
+
+    // User ne Accessibility band kar di: agar kuch enforce hona tha to reminder bhejo
+    override fun onUnbind(intent: Intent?): Boolean {
+        if (Store.sessionOn(this) || Store.detoxShorts(this) || Store.detoxReels(this) || Store.anyRoutineOn(this)) {
+            Notif.showAccessibilityNeeded(this)
+        }
+        return super.onUnbind(intent)
     }
 
     override fun onInterrupt() {}
