@@ -34,6 +34,7 @@ import android.view.accessibility.AccessibilityManager
 import android.view.animation.DecelerateInterpolator
 import android.widget.BaseAdapter
 import android.widget.Button
+import android.widget.ScrollView
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -85,7 +86,9 @@ class MainActivity : Activity() {
     private lateinit var pc: PixelClockView
     private lateinit var dots: DotsView
     private lateinit var bagsView: BagsView
-    private lateinit var detoxView: DetoxView
+    private lateinit var detoxView: DetoxArtView
+    private lateinit var detoxBox: LinearLayout
+    private lateinit var leftCard: LinearLayout
     private lateinit var scene: SceneView
     private lateinit var caption: TextView
     private lateinit var pillText: TextView
@@ -315,6 +318,7 @@ class MainActivity : Activity() {
 
     private fun buildLeft(): LinearLayout {
         val card = LinearLayout(this)
+        leftCard = card
         card.orientation = LinearLayout.VERTICAL
         card.background = rounded(C_CARD, 28)
         card.clipToOutline = true
@@ -342,7 +346,11 @@ class MainActivity : Activity() {
 
         pc = PixelClockView(this)
         bagsView = BagsView(this)
-        detoxView = DetoxView(this)
+        detoxView = DetoxArtView(this)
+        detoxBox = LinearLayout(this)
+        detoxBox.orientation = LinearLayout.VERTICAL
+        detoxBox.addView(detoxView, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        detoxBox.addView(QuoteView(this), LinearLayout.LayoutParams(MATCH, dp(120)))
         dots = DotsView(this)
         caption = TextView(this)
         caption.gravity = Gravity.CENTER
@@ -401,7 +409,7 @@ class MainActivity : Activity() {
 
         content.addView(pc, LinearLayout.LayoutParams(MATCH, 0, 1f))
         content.addView(bagsView, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        content.addView(detoxView, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        content.addView(detoxBox, LinearLayout.LayoutParams(MATCH, 0, 1f))
         content.addView(controls, LinearLayout.LayoutParams(MATCH, WRAP))
         content.addView(dots, LinearLayout.LayoutParams(MATCH, dp(16)))
         val capLp = LinearLayout.LayoutParams(MATCH, WRAP)
@@ -533,7 +541,8 @@ class MainActivity : Activity() {
 
     private fun updateLeft() {
         pc.visibility = if (tab == 1 || tab == 4) View.GONE else View.VISIBLE
-        detoxView.visibility = if (tab == 4) View.VISIBLE else View.GONE
+        detoxBox.visibility = if (tab == 4) View.VISIBLE else View.GONE
+        leftCard.background = rounded(if (tab == 4) C_DXLEFT else C_CARD, 28)
         bagsView.visibility = if (tab == 1) View.VISIBLE else View.GONE
         dots.visibility = if (tab == 3) View.VISIBLE else View.GONE
         controls.visibility = if (tab == 0) View.VISIBLE else View.GONE
@@ -576,8 +585,6 @@ class MainActivity : Activity() {
                 )
             }
             4 -> {
-                detoxView.shorts = Store.detoxShorts(this)
-                detoxView.reels = Store.detoxReels(this)
             }
             else -> {
                 val cal = Calendar.getInstance()
@@ -1191,36 +1198,49 @@ class MainActivity : Activity() {
         return col
     }
 
-    // ---------- Page 4: Detox (only Shorts / Reels blocked) ----------
-    private fun detoxCard(title: String, pkg: String, on: Boolean, onClick: () -> Unit): View {
+    // ---------- Page 4: Detox (block doomscrolling) ----------
+    private val C_DXLEFT = Color.parseColor("#FDEEE8")
+    private val C_DXPANEL = Color.parseColor("#F7E5DF")
+    private val C_DXCARD = Color.parseColor("#FBEDE8")
+
+    private fun appLabel(pkg: String): String = allApps.firstOrNull { it.pkg == pkg }?.label ?: pkg
+
+    private fun detoxCard(title: String, pkg: String, on: Boolean, sub: String?, onLong: (() -> Unit)?, onClick: () -> Unit): View {
         val card = LinearLayout(this)
         card.orientation = LinearLayout.HORIZONTAL
         card.gravity = Gravity.CENTER_VERTICAL
-        card.background = rounded(if (on) C_ORANGE else C_CELL, 24)
-        card.setPadding(dp(20), dp(10), dp(20), dp(10))
+        card.background = rounded(if (on) C_ORANGE else C_DXCARD, 26)
+        card.setPadding(dp(22), dp(10), dp(22), dp(10))
         val iv = ImageView(this)
         iv.setImageDrawable(icon(pkg))
-        card.addView(iv, LinearLayout.LayoutParams(dp(52), dp(52)))
+        card.addView(iv, LinearLayout.LayoutParams(dp(54), dp(54)))
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(16), 0, 0, 0)
+        col.setPadding(dp(18), 0, 0, 0)
         val t = TextView(this)
         t.text = title
-        t.textSize = 20f
+        t.textSize = 22f
         t.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         t.setTextColor(if (on) Color.WHITE else C_TXT)
+        t.maxLines = 1
         val st = TextView(this)
-        st.text = if (on) "BLOCKED" else "ALLOWED"
+        st.text = sub ?: (if (on) "BLOCKED" else "ALLOWED")
         st.textSize = 12f
-        st.letterSpacing = 0.2f
+        st.letterSpacing = 0.25f
         st.setTextColor(if (on) Color.WHITE else C_DIMTXT)
         col.addView(t)
         col.addView(st)
         card.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
         card.setOnClickListener { onClick() }
+        if (onLong != null) {
+            card.setOnLongClickListener {
+                onLong()
+                true
+            }
+        }
         card.setOnTouchListener { v, ev ->
             when (ev.action) {
-                MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.97f).scaleY(0.97f).setDuration(90).start()
+                MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.98f).scaleY(0.98f).setDuration(90).start()
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
             }
             false
@@ -1239,31 +1259,268 @@ class MainActivity : Activity() {
             b.background = rounded(C_ORANGE, 16)
             col.addView(b, lpV(dp(52)))
         }
-        val panel = LinearLayout(this)
-        panel.orientation = LinearLayout.VERTICAL
-        panel.background = rounded(C_TILE, 28)
-        panel.setPadding(dp(10), dp(10), dp(10), dp(10))
-        val s = detoxCard("YouTube Shorts", "com.google.android.youtube", Store.detoxShorts(this)) {
+
+        // header: Block Doomscrolling
+        val head = LinearLayout(this)
+        head.orientation = LinearLayout.HORIZONTAL
+        head.gravity = Gravity.CENTER_VERTICAL
+        head.background = rounded(C_DXCARD, 24)
+        head.setPadding(dp(14), dp(6), dp(14), dp(6))
+        val hi = IconView(this, IconView.INFINITY)
+        hi.tint = Color.WHITE
+        hi.setPadding(dp(8), dp(8), dp(8), dp(8))
+        hi.background = rounded(C_ORANGE, 12)
+        head.addView(hi, LinearLayout.LayoutParams(dp(42), dp(42)))
+        val ht = TextView(this)
+        ht.text = "Block Doomscrolling"
+        ht.textSize = 22f
+        ht.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        ht.setTextColor(C_TXT)
+        ht.setPadding(dp(16), 0, 0, 0)
+        head.addView(ht, LinearLayout.LayoutParams(WRAP, WRAP))
+        val hl = LinearLayout.LayoutParams(MATCH, dp(60))
+        hl.bottomMargin = dp(8)
+        col.addView(head, hl)
+
+        // list of cards (2 visible, swipe up/down for more)
+        val list = LinearLayout(this)
+        list.orientation = LinearLayout.VERTICAL
+        fun addCard(v: View) {
+            val lp = LinearLayout.LayoutParams(MATCH, dp(200))
+            lp.setMargins(0, dp(6), 0, dp(6))
+            list.addView(v, lp)
+        }
+        addCard(detoxCard("YouTube Shorts", "com.google.android.youtube", Store.detoxShorts(this), null, null) {
             Store.setDetoxShorts(this, !Store.detoxShorts(this))
             render()
             updateLeft()
-        }
-        val r = detoxCard("Instagram Reels", "com.instagram.android", Store.detoxReels(this)) {
+        })
+        addCard(detoxCard("Instagram Reels", "com.instagram.android", Store.detoxReels(this), null, null) {
             Store.setDetoxReels(this, !Store.detoxReels(this))
             render()
             updateLeft()
+        })
+        val on = Store.detoxAppsOn(this)
+        val full = Store.detoxFull(this)
+        for (pkg in Store.detoxApps(this).sortedBy { appLabel(it).lowercase() }) {
+            val sub = when {
+                pkg !in on -> "ALLOWED"
+                pkg in full -> "FULL BLOCK"
+                else -> "REELS ONLY"
+            }
+            addCard(detoxCard(appLabel(pkg), pkg, pkg in on, sub, { detoxAppMenu(pkg) }) {
+                Store.setDetoxAppOn(this, pkg, pkg !in Store.detoxAppsOn(this))
+                render()
+                updateLeft()
+            })
         }
-        val l1 = LinearLayout.LayoutParams(MATCH, 0, 1f)
-        l1.setMargins(0, dp(4), 0, dp(4))
-        val l2 = LinearLayout.LayoutParams(MATCH, 0, 1f)
-        l2.setMargins(0, dp(4), 0, dp(4))
-        panel.addView(s, l1)
-        panel.addView(r, l2)
-        val pl = LinearLayout.LayoutParams(MATCH, 0, 1f)
-        pl.setMargins(0, dp(5), 0, dp(5))
-        col.addView(panel, pl)
-        col.addView(tile("Sirf Shorts / Reels band  \u00B7  baaki sab chalega", false) {}, lpV(dp(64)))
+        val sv = HalfScrollView(this)
+        sv.isVerticalScrollBarEnabled = false
+        sv.addView(list, FrameLayout.LayoutParams(MATCH, WRAP))
+        val panel = LinearLayout(this)
+        panel.orientation = LinearLayout.VERTICAL
+        panel.background = rounded(C_DXPANEL, 28)
+        panel.setPadding(dp(8), dp(4), dp(8), dp(4))
+        panel.addView(sv, LinearLayout.LayoutParams(MATCH, MATCH))
+        col.addView(panel, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+        // Add Apps: tap ya right slide dono
+        val addRow = FrameLayout(this)
+        addRow.background = rounded(C_DXCARD, 26)
+        val inner = LinearLayout(this)
+        inner.orientation = LinearLayout.HORIZONTAL
+        inner.gravity = Gravity.CENTER_VERTICAL
+        inner.setPadding(dp(12), dp(8), dp(18), dp(8))
+        val plus = IconView(this, IconView.PLUS)
+        plus.tint = C_TXT
+        plus.setPadding(dp(14), dp(14), dp(14), dp(14))
+        plus.background = rounded(Color.parseColor("#F9D8CB"), 16)
+        inner.addView(plus, LinearLayout.LayoutParams(dp(56), dp(56)))
+        val at = TextView(this)
+        at.text = "Add Apps"
+        at.textSize = 21f
+        at.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        at.setTextColor(C_TXT)
+        at.setPadding(dp(18), 0, 0, 0)
+        inner.addView(at, LinearLayout.LayoutParams(0, WRAP, 1f))
+        val ch = IconView(this, IconView.CHEVRON)
+        ch.tint = C_DIMTXT
+        inner.addView(ch, LinearLayout.LayoutParams(dp(24), dp(24)))
+        addRow.addView(inner, FrameLayout.LayoutParams(MATCH, MATCH))
+        var downX = 0f
+        var moved = false
+        addRow.setOnTouchListener { _, ev ->
+            when (ev.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = ev.rawX
+                    moved = false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = ev.rawX - downX
+                    if (dx > dp(8)) {
+                        moved = true
+                        plus.translationX = dx.coerceIn(0f, (addRow.width - plus.width - dp(30)).toFloat())
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
+                    val dx = ev.rawX - downX
+                    val doIt = if (moved) dx > addRow.width * 0.4f else true
+                    plus.animate().translationX(0f).setDuration(200).start()
+                    if (doIt) pickDetoxApp()
+                }
+                MotionEvent.ACTION_CANCEL -> plus.animate().translationX(0f).setDuration(200).start()
+            }
+            true
+        }
+        val al = LinearLayout.LayoutParams(MATCH, dp(76))
+        al.topMargin = dp(8)
+        col.addView(addRow, al)
+
+        // info
+        val info = LinearLayout(this)
+        info.orientation = LinearLayout.HORIZONTAL
+        info.gravity = Gravity.CENTER_VERTICAL
+        info.background = rounded(C_DXCARD, 24)
+        info.setPadding(dp(20), 0, dp(16), 0)
+        val ii = IconView(this, IconView.INFO)
+        ii.tint = C_TXT
+        info.addView(ii, LinearLayout.LayoutParams(dp(26), dp(26)))
+        val itx = TextView(this)
+        itx.text = "Only Shorts & Reels are blocked. Everything else works normally."
+        itx.textSize = 14f
+        itx.setTextColor(C_TXT)
+        itx.setPadding(dp(14), 0, 0, 0)
+        info.addView(itx, LinearLayout.LayoutParams(0, WRAP, 1f))
+        val il = LinearLayout.LayoutParams(MATCH, dp(64))
+        il.topMargin = dp(8)
+        col.addView(info, il)
         return col
+    }
+
+    private fun detoxAppMenu(pkg: String) {
+        val name = appLabel(pkg)
+        AlertDialog.Builder(this)
+            .setTitle(name)
+            .setItems(
+                arrayOf(
+                    "Block only Reels / Shorts",
+                    "Block whole app",
+                    "Capture IDs (20 sec)",
+                    "Show captured IDs",
+                    "Remove app"
+                )
+            ) { _, i ->
+                when (i) {
+                    0 -> {
+                        Store.setDetoxFull(this, pkg, false)
+                        render()
+                    }
+                    1 -> {
+                        Store.setDetoxFull(this, pkg, true)
+                        render()
+                    }
+                    2 -> {
+                        Store.dxDbgStart(this, pkg)
+                        Toast.makeText(this, "20 sec: ab $name kholo aur Reels/Spotlight screen pe jao", Toast.LENGTH_LONG).show()
+                    }
+                    3 -> showCapturedIds()
+                    else -> AlertDialog.Builder(this)
+                        .setTitle("Remove $name?")
+                        .setPositiveButton("Remove") { _, _ ->
+                            Store.removeDetoxApp(this, pkg)
+                            render()
+                            updateLeft()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            }
+            .show()
+    }
+
+    private fun showCapturedIds() {
+        val ids = Store.dxDbgIds(this)
+        val text = if (ids.isEmpty()) "Kuch capture nahi hua. Capture IDs dabake 20 sec ke andar app kholo." else ids.joinToString("\n")
+        val tv = TextView(this)
+        tv.text = text
+        tv.textSize = 12f
+        tv.setTextIsSelectable(true)
+        tv.setPadding(dp(20), dp(10), dp(20), dp(10))
+        val sc = ScrollView(this)
+        sc.addView(tv)
+        AlertDialog.Builder(this)
+            .setTitle("Captured IDs (${ids.size})")
+            .setView(sc)
+            .setPositiveButton("Copy") { _, _ ->
+                val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("ids", text))
+                Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun pickDetoxApp() {
+        val have = Store.detoxApps(this)
+        val base = allApps.filter {
+            it.pkg != packageName && it.pkg !in have &&
+                it.pkg != "com.google.android.youtube" && it.pkg != "com.instagram.android"
+        }
+        var shown: List<App> = base
+        var dlg: AlertDialog? = null
+
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(dp(12), dp(8), dp(12), 0)
+        val search = EditText(this)
+        search.hint = "Search app"
+        search.isSingleLine = true
+        col.addView(search)
+        val lv = ListView(this)
+        val ad = object : BaseAdapter() {
+            override fun getCount() = shown.size
+            override fun getItem(i: Int): Any = shown[i]
+            override fun getItemId(i: Int) = i.toLong()
+            override fun getView(i: Int, v: View?, parent: ViewGroup?): View {
+                val a = shown[i]
+                val row = (v as? LinearLayout) ?: LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(8), dp(6), dp(8), dp(6))
+                    addView(ImageView(this@MainActivity), LinearLayout.LayoutParams(dp(40), dp(40)))
+                    val tv = TextView(this@MainActivity)
+                    tv.textSize = 16f
+                    tv.setPadding(dp(12), 0, dp(8), 0)
+                    addView(tv, LinearLayout.LayoutParams(0, WRAP, 1f))
+                }
+                (row.getChildAt(0) as ImageView).setImageDrawable(icon(a.pkg))
+                (row.getChildAt(1) as TextView).text = a.label
+                return row
+            }
+        }
+        lv.adapter = ad
+        lv.setOnItemClickListener { _, _, i, _ ->
+            Store.addDetoxApp(this, shown[i].pkg)
+            dlg?.dismiss()
+            render()
+            updateLeft()
+        }
+        search.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                val q = s?.toString() ?: ""
+                shown = if (q.isBlank()) base else base.filter { it.label.contains(q, ignoreCase = true) }
+                ad.notifyDataSetChanged()
+            }
+            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+        })
+        col.addView(lv, LinearLayout.LayoutParams(MATCH, dp(360)))
+        dlg = AlertDialog.Builder(this)
+            .setTitle("Add app to Detox")
+            .setView(col)
+            .setNegativeButton("Cancel", null)
+            .create()
+        dlg?.show()
     }
 
     // ---------- Focus (black) screen ----------
