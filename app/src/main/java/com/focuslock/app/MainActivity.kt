@@ -183,6 +183,10 @@ class MainActivity : Activity() {
         return lp
     }
 
+    /** App abhi phone mein installed hai? (cache nahi, har baar fresh check) */
+    private fun installed(pkg: String): Boolean =
+        try { packageManager.getApplicationInfo(pkg, 0); true } catch (e: Exception) { false }
+
     private fun icon(pkg: String): Drawable? =
         iconCache.getOrPut(pkg) {
             try { packageManager.getApplicationIcon(pkg) } catch (e: Exception) { null }
@@ -1302,14 +1306,14 @@ class MainActivity : Activity() {
             lp.setMargins(0, dp(6), 0, dp(6))
             list.addView(v, lp)
         }
-        if (icon("com.google.android.youtube") != null) {
+        if (installed("com.google.android.youtube")) {
             addCard(detoxCard("YouTube Shorts", "com.google.android.youtube", Store.detoxShorts(this), null, null) {
                 Store.setDetoxShorts(this, !Store.detoxShorts(this))
                 render()
                 updateLeft()
             })
         }
-        if (icon("com.instagram.android") != null) {
+        if (installed("com.instagram.android")) {
             addCard(detoxCard("Instagram Reels", "com.instagram.android", Store.detoxReels(this), null, null) {
                 Store.setDetoxReels(this, !Store.detoxReels(this))
                 render()
