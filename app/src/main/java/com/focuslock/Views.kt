@@ -976,17 +976,17 @@ class DetoxArtView(ctx: Context) : AssembleView(ctx) {
 
         // soft blob + floor shadow
         paint.style = Paint.Style.FILL
-        paint.color = Color.parseColor("#F9DCD0")
+        paint.color = Color.parseColor("#EEE9E8")
         rect.set(cx - pw * 1.45f, top + ph * 0.34f, cx + pw * 1.05f, top + ph * 0.96f)
         canvas.drawOval(rect, paint)
-        paint.color = Color.parseColor("#F5D2C4")
+        paint.color = Color.parseColor("#E4DEDD")
         rect.set(cx - pw * 0.85f, top + ph * 0.985f, cx + pw * 0.85f, top + ph * 1.045f)
         canvas.drawOval(rect, paint)
 
         // phone
         val sw = pw * 0.075f
         rect.set(cx - pw / 2f, top, cx + pw / 2f, top + ph)
-        paint.color = Color.parseColor("#FDEFEA")
+        paint.color = Color.parseColor("#FCFAFA")
         canvas.drawRoundRect(rect, pw * 0.2f, pw * 0.2f, paint)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = sw
@@ -1053,7 +1053,7 @@ class DetoxArtView(ctx: Context) : AssembleView(ctx) {
         val x2 = r + cw * 0.02f
         val y2 = t - ch * 0.05f
         paint.strokeWidth = pw * 0.15f
-        paint.color = Color.parseColor("#FDEFEA")
+        paint.color = Color.parseColor("#FCFAFA")
         canvas.drawLine(x1, y1, x2, y2, paint)
         paint.strokeWidth = pw * 0.075f
         paint.color = C_ORANGE
@@ -1159,7 +1159,7 @@ class QuoteView(ctx: Context) : View(ctx) {
         val gap = dens * 14f
         val total = (quotes.size - 1) * gap
         for (i in quotes.indices) {
-            paint.color = if (i == idx) C_ORANGE else Color.parseColor("#F3D7CC")
+            paint.color = if (i == idx) C_ORANGE else Color.parseColor("#DDD7D6")
             canvas.drawCircle(w / 2f - total / 2f + i * gap, h - dens * 14f, r, paint)
         }
     }
