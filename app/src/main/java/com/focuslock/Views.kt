@@ -594,7 +594,7 @@ class RulerView(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
     private var ignore = false
 
     fun setMinutes(m: Int) {
-        value = m.toFloat().coerceAtLeast(5f)
+        value = m.toFloat().coerceAtLeast(1f)
         reported = m
         invalidate()
     }
@@ -603,7 +603,7 @@ class RulerView(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
         super.onDraw(canvas)
         val w = width.toFloat()
         val h = height.toFloat()
-        val sp = h / 22f
+        val sp = h / 110f
         paint.style = Paint.Style.STROKE
         paint.strokeCap = Paint.Cap.ROUND
         paint.strokeWidth = dens * 1.5f
@@ -611,16 +611,16 @@ class RulerView(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
         rect.set(dens, dens, w - dens, h - dens)
         canvas.drawRoundRect(rect, w * 0.3f, w * 0.3f, paint)
 
-        val k = value / 5f
+        val k = value
         val cy = h / 2f
-        paint.strokeWidth = dens * 1.6f
-        val first = Math.floor((k - 12f).toDouble()).toInt()
-        val last = Math.ceil((k + 12f).toDouble()).toInt()
+        val first = Math.floor((k - 60f).toDouble()).toInt()
+        val last = Math.ceil((k + 60f).toDouble()).toInt()
         for (i in first..last) {
-            if (i < 0 || i > 288) continue
+            if (i < 1 || i > 1440) continue
             val y = cy + (i - k) * sp
             if (y < h * 0.07f || y > h * 0.93f) continue
-            val half = w * (if (i % 12 == 0) 0.26f else 0.17f)
+            paint.strokeWidth = dens * (if (i % 5 == 0) 1.6f else 1.0f)
+            val half = w * (if (i % 60 == 0) 0.30f else if (i % 5 == 0) 0.22f else 0.12f)
             canvas.drawLine(w / 2f - half, y, w / 2f + half, y, paint)
         }
         paint.color = C_ORANGE
@@ -639,9 +639,9 @@ class RulerView(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
                 if (!ignore) {
                     val dy = e.y - lastY
                     lastY = e.y
-                    value = (value - dy / (height / 22f) * 5f).coerceIn(5f, 1440f)
+                    value = (value - dy / (height / 110f)).coerceIn(1f, 1440f)
                     invalidate()
-                    val snapped = (Math.round(value / 5f) * 5).coerceIn(5, 1440)
+                    val snapped = Math.round(value).coerceIn(1, 1440)
                     if (snapped != reported) {
                         reported = snapped
                         onChange(snapped)
