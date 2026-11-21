@@ -617,10 +617,11 @@ class RulerView(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
         val last = Math.ceil((k + 60f).toDouble()).toInt()
         for (i in first..last) {
             if (i < 1 || i > 1440) continue
+            if (i % 5 != 0) continue // sirf har 5 min pe line, beech ki lines hata di
             val y = cy + (i - k) * sp
             if (y < h * 0.07f || y > h * 0.93f) continue
-            paint.strokeWidth = dens * (if (i % 5 == 0) 1.6f else 1.0f)
-            val half = w * (if (i % 60 == 0) 0.30f else if (i % 5 == 0) 0.22f else 0.12f)
+            paint.strokeWidth = dens * (if (i % 15 == 0) 1.6f else 1.0f)
+            val half = w * (if (i % 60 == 0) 0.30f else if (i % 15 == 0) 0.22f else 0.12f)
             canvas.drawLine(w / 2f - half, y, w / 2f + half, y, paint)
         }
         paint.color = C_ORANGE
