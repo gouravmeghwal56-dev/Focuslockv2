@@ -584,7 +584,7 @@ class RulerView(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
         val last = Math.ceil((k + 12f).toDouble()).toInt()
         for (i in first..last) {
             if (i < 0 || i > 288) continue
-            val y = cy - (i - k) * sp
+            val y = cy + (i - k) * sp
             if (y < h * 0.07f || y > h * 0.93f) continue
             val half = w * (if (i % 12 == 0) 0.26f else 0.17f)
             canvas.drawLine(w / 2f - half, y, w / 2f + half, y, paint)
