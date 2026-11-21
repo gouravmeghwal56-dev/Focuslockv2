@@ -1249,6 +1249,8 @@ class MainActivity : Activity() {
         return card
     }
 
+    private var dxScrollY = 0
+
     private fun detoxPage(): View {
         val col = vbox()
         if (!accEnabled()) {
@@ -1318,6 +1320,8 @@ class MainActivity : Activity() {
         val sv = HalfScrollView(this)
         sv.isVerticalScrollBarEnabled = false
         sv.addView(list, FrameLayout.LayoutParams(MATCH, WRAP))
+        sv.restoreScroll(dxScrollY)
+        sv.setOnScrollChangeListener { _, _, y, _, _ -> dxScrollY = y }
         val panel = LinearLayout(this)
         panel.orientation = LinearLayout.VERTICAL
         panel.background = rounded(C_DXPANEL, 28)
