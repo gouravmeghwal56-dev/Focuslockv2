@@ -42,6 +42,19 @@ object Store {
     fun detoxReels(c: Context) = p(c).getBoolean("dx_reels", false)
     fun setDetoxReels(c: Context, v: Boolean) { p(c).edit().putBoolean("dx_reels", v).apply() }
 
+    // ---------- Sound tile: music apps (Spotify / YT Music ...) ----------
+    fun soundApps(c: Context): List<String> =
+        (p(c).getString("snd_apps", "") ?: "").split(",").filter { it.isNotBlank() }
+    fun addSoundApp(c: Context, pkg: String) {
+        val l = soundApps(c)
+        if (pkg !in l) p(c).edit().putString("snd_apps", (l + pkg).joinToString(",")).apply()
+    }
+    fun removeSoundApp(c: Context, pkg: String) {
+        p(c).edit().putString("snd_apps", (soundApps(c) - pkg).joinToString(",")).apply()
+    }
+    fun sndIdx(c: Context) = p(c).getInt("snd_idx", 0)
+    fun setSndIdx(c: Context, v: Int) { p(c).edit().putInt("snd_idx", v).apply() }
+
     // ---------- Manual stopwatch (black screen, top right) ----------
     fun swRunning(c: Context) = p(c).getLong("sw_start", 0L) > 0L
     fun swElapsed(c: Context): Long {
@@ -245,6 +258,8 @@ class BlockService : AccessibilityService() {
         val sel = Store.selected(this)
         var block = if (Store.allowMode(this)) pkg !in sel else pkg in sel
         if (Store.strict(this) && pkg == "com.android.settings") block = true
+        // Sound tile me jo music apps add kiye hain wo session me chalne do
+        if (pkg in Store.soundApps(this)) block = false
         if (!block) return
 
         val now = System.currentTimeMillis()
