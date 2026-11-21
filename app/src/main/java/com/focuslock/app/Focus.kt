@@ -22,6 +22,7 @@ import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
@@ -249,35 +250,157 @@ class HoldView(ctx: Context, private val onDone: () -> Unit) : View(ctx) {
 
 // ---------- Sound tile: tap = Rain -> Waves -> City -> Birds -> Off ----------
 
-class RainView(ctx: Context, private val onMode: (String) -> Unit) : View(ctx) {
-    private val names = arrayOf("TAP FOR SOUND", "RAIN", "WAVES", "CITY", "BIRDS")
+class RainView(
+    ctx: Context,
+    private val onLabel: (String) -> Unit,
+    private val onLaunch: (String) -> Unit,
+    private val onMenu: () -> Unit
+) : View(ctx) {
+    private class Item(val mode: Int, val pkg: String?, val name: String)
+
+    private var items: List<Item> = emptyList()
+    private var idx = 0
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val path = Path()
     private var t = 0f
     private var anim: ValueAnimator? = null
+    private var swipeAnim: ValueAnimator? = null
+    private var swipeP = 1f
+    private var swipeDir = 1
     private val dens = ctx.resources.displayMetrics.density
+    private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
     private val xs = FloatArray(30) { (it * 37 % 30) / 30f }
     private val sp = FloatArray(30) { 0.6f + (it * 13 % 7) / 7f * 0.8f }
     private val ln = FloatArray(30) { 0.05f + (it * 5 % 4) * 0.03f }
-    private val bh = floatArrayOf(0.35f, 0.55f, 0.42f, 0.7f, 0.5f, 0.38f, 0.62f, 0.45f)
+    private var downX = 0f
+    private var downY = 0f
+    private var moved = false
+    private var longFired = false
+    private val longRun = Runnable {
+        longFired = true
+        onMenu()
+    }
 
     init {
-        setOnClickListener {
-            Ambient.set((Ambient.mode + 1) % 5)
-            onMode(names[Ambient.mode])
+        load()
+    }
+
+    private fun load() {
+        val pm = context.packageManager
+        val list = ArrayList<Item>()
+        for (m in 1..Ambient.COUNT) list.add(Item(m, null, Ambient.NAMES[m]))
+        for (pkg in Store.soundApps(context)) {
+            try {
+                val label = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+                list.add(Item(0, pkg, label.uppercase()))
+            } catch (e: Exception) {
+            }
+        }
+        items = list
+        val cur = items.indexOfFirst { it.pkg == null && it.mode == Ambient.mode }
+        idx = if (cur >= 0) cur else Store.sndIdx(context).coerceIn(0, items.size - 1)
+    }
+
+    /** Music app add / remove ke baad list dobara banao. */
+    fun reload() {
+        load()
+        updateLabel()
+        invalidate()
+    }
+
+    private fun playing(): Boolean {
+        val it = items.getOrNull(idx) ?: return false
+        return it.pkg == null && Ambient.mode == it.mode
+    }
+
+    private fun updateLabel() {
+        val it = items.getOrNull(idx) ?: return
+        val hint = when {
+            it.pkg != null -> "TAP TO OPEN"
+            playing() -> "TAP TO STOP"
+            else -> "TAP TO PLAY"
+        }
+        onLabel(it.name + "  \u00B7  " + hint)
+    }
+
+    private fun tap() {
+        val it = items.getOrNull(idx) ?: return
+        if (it.pkg != null) {
+            Ambient.fadeOut()
+            onLaunch(it.pkg)
+        } else if (Ambient.mode == it.mode) {
+            Ambient.fadeOut()
+        } else {
+            Ambient.set(it.mode)
+        }
+        updateLabel()
+        invalidate()
+    }
+
+    private fun swipe(dir: Int) {
+        if (items.size < 2) return
+        idx = (idx + dir + items.size) % items.size
+        Store.setSndIdx(context, idx)
+        val it = items[idx]
+        if (Ambient.mode != Ambient.OFF) {
+            if (it.pkg == null) Ambient.set(it.mode) else Ambient.fadeOut()
+        }
+        swipeDir = dir
+        swipeAnim?.cancel()
+        val a = ValueAnimator.ofFloat(0f, 1f)
+        a.duration = 260L
+        a.addUpdateListener {
+            swipeP = it.animatedValue as Float
             invalidate()
         }
+        a.start()
+        swipeAnim = a
+        updateLabel()
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = e.x
+                downY = e.y
+                moved = false
+                longFired = false
+                parent?.requestDisallowInterceptTouchEvent(true)
+                postDelayed(longRun, 650L)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!moved && (Math.abs(e.x - downX) > slop || Math.abs(e.y - downY) > slop)) {
+                    moved = true
+                    removeCallbacks(longRun)
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                removeCallbacks(longRun)
+                if (!longFired) {
+                    val dx = e.x - downX
+                    val dy = e.y - downY
+                    if (Math.abs(dx) > 48f * dens && Math.abs(dx) > Math.abs(dy) * 1.2f) {
+                        swipe(if (dx < 0f) 1 else -1)
+                    } else if (!moved) {
+                        tap()
+                    }
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> removeCallbacks(longRun)
+        }
+        return true
     }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        onMode(names[Ambient.mode])
+        updateLabel()
         val a = ValueAnimator.ofFloat(0f, 1f)
         a.duration = 2800L
         a.repeatCount = ValueAnimator.INFINITE
         a.interpolator = LinearInterpolator()
         a.addUpdateListener {
             t = it.animatedValue as Float
-            invalidate()
+            if (playing()) invalidate()
         }
         a.start()
         anim = a
@@ -285,6 +408,8 @@ class RainView(ctx: Context, private val onMode: (String) -> Unit) : View(ctx) {
 
     override fun onDetachedFromWindow() {
         anim?.cancel()
+        swipeAnim?.cancel()
+        removeCallbacks(longRun)
         super.onDetachedFromWindow()
     }
 
@@ -292,71 +417,140 @@ class RainView(ctx: Context, private val onMode: (String) -> Unit) : View(ctx) {
         super.onDraw(canvas)
         val w = width.toFloat()
         val h = height.toFloat()
+        val it = items.getOrNull(idx) ?: return
+        val live = playing()
+        val alpha = ((if (live || it.pkg != null) 255 else 120) * swipeP).toInt().coerceIn(0, 255)
+        val off = (1f - swipeP) * swipeDir * w * 0.35f
+        val sc = canvas.saveLayerAlpha(0f, 0f, w, h, alpha)
+        canvas.translate(off, 0f)
+        val tt = if (live) t else 0.25f
         paint.style = Paint.Style.STROKE
         paint.strokeCap = Paint.Cap.ROUND
         paint.strokeWidth = dens * 1.6f
         paint.color = Color.parseColor("#8A8A8A")
-        when (Ambient.mode) {
-            Ambient.RAIN -> {
-                val tt = t * 2f % 1f
-                for (i in xs.indices) {
-                    val prog = (tt * sp[i] * 2f + i * 0.137f) % 1f
-                    val y = prog * (h * 1.2f) - h * 0.1f
-                    val x = xs[i] * w
-                    val l = ln[i] * h
-                    canvas.drawLine(x, y, x - l * 0.2f, y + l, paint)
-                }
-            }
-            Ambient.WAVES -> {
-                for (k in 0..2) {
-                    val base = h * (0.42f + 0.14f * k)
-                    val dir = if (k % 2 == 0) 1f else -1f
-                    val amp = h * 0.045f
-                    var px = 0f
-                    var py = base + amp * Math.sin((t * 2f * dir * Math.PI * 1.0)).toFloat()
-                    var x = 14f
-                    while (x <= w + 14f) {
-                        val y = base + amp * Math.sin(x / w * (2.0 * Math.PI) * (1.3 + k * 0.4) + t * 2.0 * Math.PI * dir).toFloat()
-                        canvas.drawLine(px, py, x, y, paint)
-                        px = x
-                        py = y
-                        x += 14f
+        if (it.pkg != null) {
+            drawAppIcon(canvas, it.pkg, w, h)
+        } else {
+            when (it.mode) {
+                Ambient.RAIN -> {
+                    val p2 = tt * 2f % 1f
+                    for (i in xs.indices) {
+                        val prog = (p2 * sp[i] * 2f + i * 0.137f) % 1f
+                        val y = prog * (h * 1.2f) - h * 0.1f
+                        val x = xs[i] * w
+                        val l = ln[i] * h
+                        canvas.drawLine(x, y, x - l * 0.2f, y + l, paint)
                     }
                 }
-            }
-            Ambient.CITY -> {
-                paint.style = Paint.Style.FILL
-                val n = bh.size
-                val bw = w / n
-                for (i in 0 until n) {
-                    paint.color = Color.parseColor("#4A4A4A")
-                    val top = h * (1f - bh[i] * 0.8f)
-                    canvas.drawRect(i * bw + dens, top, (i + 1) * bw - dens, h, paint)
-                    paint.color = Color.parseColor("#9A9A9A")
-                    var wy = top + dens * 8
-                    var row = 0
-                    while (wy < h - dens * 10) {
-                        for (c in 0..1) {
-                            if ((i * 7 + row * 3 + c * 5 + (t * 6f).toInt()) % 4 == 0) {
-                                val wx = i * bw + bw * (0.25f + 0.35f * c)
-                                canvas.drawRect(wx, wy, wx + dens * 4, wy + dens * 5, paint)
-                            }
+                Ambient.WAVES -> {
+                    for (k in 0..2) {
+                        val base = h * (0.42f + 0.14f * k)
+                        val dir = if (k % 2 == 0) 1f else -1f
+                        val amp = h * 0.045f
+                        var px = 0f
+                        var py = base + amp * Math.sin((tt * 2f * dir * Math.PI * 1.0)).toFloat()
+                        var x = 14f
+                        while (x <= w + 14f) {
+                            val y = base + amp * Math.sin(x / w * (2.0 * Math.PI) * (1.3 + k * 0.4) + tt * 2.0 * Math.PI * dir).toFloat()
+                            canvas.drawLine(px, py, x, y, paint)
+                            px = x
+                            py = y
+                            x += 14f
                         }
-                        wy += dens * 14
-                        row++
                     }
                 }
-            }
-            Ambient.BIRDS -> {
-                for (i in 0..3) {
-                    val x = (((t * (0.6f + i * 0.12f)) + i * 0.27f) % 1.3f - 0.15f) * w
-                    val y = h * (0.22f + 0.15f * i) + Math.sin(t * 2.0 * Math.PI + i).toFloat() * h * 0.03f
-                    val flap = Math.sin(t * 2.0 * Math.PI * 4.0 + i).toFloat() * 0.5f
-                    val s = dens * 11f
-                    canvas.drawLine(x - s, y - s * flap, x, y, paint)
-                    canvas.drawLine(x, y, x + s, y - s * flap, paint)
+                Ambient.WIND -> {
+                    for (k in 0..3) {
+                        val y0 = h * (0.25f + 0.17f * k)
+                        val shift = ((tt * (0.8f + k * 0.15f) + k * 0.31f) % 1f) * w * 0.5f
+                        var px = 0f
+                        var py = y0
+                        var x = 12f
+                        while (x <= w) {
+                            val y = y0 + Math.sin((x - shift) / w * 2.0 * Math.PI * 1.5).toFloat() * h * 0.04f
+                            if (x > w * 0.12f + shift * 0.2f && x < w * 0.88f) canvas.drawLine(px, py, x, y, paint)
+                            px = x
+                            py = y
+                            x += 12f
+                        }
+                    }
+                }
+                Ambient.BIRDS -> {
+                    for (i in 0..3) {
+                        val x = (((tt * (0.6f + i * 0.12f)) + i * 0.27f) % 1.3f - 0.15f) * w
+                        val y = h * (0.22f + 0.15f * i) + Math.sin(tt * 2.0 * Math.PI + i).toFloat() * h * 0.03f
+                        val flap = Math.sin(tt * 2.0 * Math.PI * 4.0 + i).toFloat() * 0.5f
+                        val s = dens * 11f
+                        canvas.drawLine(x - s, y - s * flap, x, y, paint)
+                        canvas.drawLine(x, y, x + s, y - s * flap, paint)
+                    }
+                }
+                Ambient.FIRE -> {
+                    paint.style = Paint.Style.FILL
+                    val base = h * 0.80f
+                    for (k in 0..2) {
+                        val cx = w * (0.38f + 0.12f * k)
+                        val sway = Math.sin((tt * 2.0 + k * 0.33) * 2.0 * Math.PI).toFloat()
+                        val fh = h * (if (k == 1) 0.46f else 0.34f) * (1f + 0.12f * sway)
+                        val fw = w * (if (k == 1) 0.085f else 0.065f)
+                        path.reset()
+                        path.moveTo(cx - fw, base)
+                        path.quadTo(cx - fw * 1.1f, base - fh * 0.5f, cx + sway * fw * 0.5f, base - fh)
+                        path.quadTo(cx + fw * 1.1f, base - fh * 0.5f, cx + fw, base)
+                        path.close()
+                        paint.color = if (k == 1) C_ORANGE else Color.parseColor("#B04A08")
+                        canvas.drawPath(path, paint)
+                    }
+                    paint.color = Color.parseColor("#8A8A8A")
+                    for (i in 0..4) {
+                        val prog = (tt * (0.7f + i * 0.1f) + i * 0.21f) % 1f
+                        val x = w * (0.40f + 0.05f * i) + Math.sin(prog * 6.0 + i).toFloat() * w * 0.02f
+                        canvas.drawCircle(x, base - prog * h * 0.6f, dens * 1.6f, paint)
+                    }
+                }
+                Ambient.NIGHT -> {
+                    paint.style = Paint.Style.FILL
+                    paint.color = Color.parseColor("#B8B8B8")
+                    canvas.drawCircle(w * 0.72f, h * 0.34f, h * 0.15f, paint)
+                    paint.color = Color.parseColor("#1D1D1D")
+                    canvas.drawCircle(w * 0.72f + h * 0.07f, h * 0.34f - h * 0.03f, h * 0.14f, paint)
+                    paint.color = Color.parseColor("#8A8A8A")
+                    for (i in 0..9) {
+                        val sx = w * ((i * 37 % 10) / 10f + 0.05f)
+                        val sy = h * (0.15f + ((i * 53) % 10) / 10f * 0.5f)
+                        val tw = 0.5f + 0.5f * Math.sin((tt * 2.0 + i * 0.37) * 2.0 * Math.PI).toFloat()
+                        paint.alpha = (60 + 195 * tw).toInt().coerceIn(0, 255)
+                        canvas.drawCircle(sx, sy, dens * (1.2f + 0.8f * tw), paint)
+                    }
+                    paint.alpha = 255
                 }
             }
+        }
+        canvas.restoreToCount(sc)
+
+        // dots: kitni sounds hain aur kaun si chuni hai (swipe ka hint)
+        val n = items.size
+        if (n > 1) {
+            paint.style = Paint.Style.FILL
+            val r = dens * 2.6f
+            val gap = dens * 11f
+            val x0 = (w - gap * (n - 1)) / 2f
+            for (i in 0 until n) {
+                paint.color = if (i == idx) Color.WHITE else Color.parseColor("#4A4A4A")
+                canvas.drawCircle(x0 + gap * i, dens * 14f, r, paint)
+            }
+        }
+    }
+
+    private fun drawAppIcon(canvas: Canvas, pkg: String, w: Float, h: Float) {
+        try {
+            val d = context.packageManager.getApplicationIcon(pkg)
+            val s = (Math.min(w, h) * 0.42f).toInt()
+            val cx = (w / 2f).toInt()
+            val cy = (h * 0.46f).toInt()
+            d.setBounds(cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2)
+            d.draw(canvas)
+        } catch (e: Exception) {
         }
     }
 }
@@ -471,8 +665,19 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     private var lastSwRunning = false
 
     private fun swText(): String {
-        val s = Store.swElapsed(act) / 1000L
-        return String.format("%d:%02d:%02d", s / 3600L, (s % 3600L) / 60L, s % 60L)
+        val e = Store.swElapsed(act)
+        val s = e / 1000L
+        return String.format("%d:%02d:%02d.%03d", s / 3600L, (s % 3600L) / 60L, s % 60L, e % 1000L)
+    }
+
+    // stopwatch chalte time milliseconds smooth dikhane ke liye ~30 fps refresh
+    private val swHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val swTick = object : Runnable {
+        override fun run() {
+            if (!view.isAttachedToWindow) return
+            timerTv.text = swText()
+            if (Store.swRunning(act)) swHandler.postDelayed(this, 33L)
+        }
     }
     private lateinit var chuteTv: TextView
     private var lastSec = -1
@@ -517,6 +722,61 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         g.background = bg
         g.setOnClickListener { onClick() }
         return g
+    }
+
+    // Sound tile pe long-press: music app add / remove
+    private fun soundMenu(reload: () -> Unit) {
+        val have = Store.soundApps(act)
+        val opts = ArrayList<String>()
+        opts.add("Add music app (Spotify, YT Music...)")
+        if (have.isNotEmpty()) opts.add("Remove app")
+        AlertDialog.Builder(act)
+            .setTitle("Sound tile")
+            .setItems(opts.toTypedArray()) { _, i ->
+                if (i == 0) pickSoundApp(reload) else removeSoundApp(reload)
+            }
+            .show()
+    }
+
+    private fun pickSoundApp(reload: () -> Unit) {
+        val pm = act.packageManager
+        val have = Store.soundApps(act)
+        val known = setOf(
+            "com.spotify.music", "com.google.android.apps.youtube.music", "com.jio.media.jiobeats",
+            "com.bsbportal.music", "com.gaana", "com.amazon.mp3", "com.apple.android.music", "com.soundcloud.android"
+        )
+        val q = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = pm.queryIntentActivities(q, 0)
+            .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+            .filter { it.first != act.packageName && it.first !in have }
+            .distinctBy { it.first }
+            .sortedWith(compareBy({ it.first !in known }, { it.second.lowercase() }))
+        if (apps.isEmpty()) {
+            Toast.makeText(act, "Koi app nahi mila", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(act)
+            .setTitle("Add music app")
+            .setItems(apps.map { it.second }.toTypedArray()) { _, w ->
+                Store.addSoundApp(act, apps[w].first)
+                reload()
+            }
+            .show()
+    }
+
+    private fun removeSoundApp(reload: () -> Unit) {
+        val pm = act.packageManager
+        val have = Store.soundApps(act)
+        val names = have.map {
+            try { pm.getApplicationLabel(pm.getApplicationInfo(it, 0)).toString() } catch (e: Exception) { it }
+        }
+        AlertDialog.Builder(act)
+            .setTitle("Remove app")
+            .setItems(names.toTypedArray()) { _, w ->
+                Store.removeSoundApp(act, have[w])
+                reload()
+            }
+            .show()
     }
 
     private fun launch(pkg: String) {
@@ -565,6 +825,8 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         timerTv.setTextColor(Color.WHITE)
         timerTv.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         timerTv.gravity = Gravity.CENTER
+        timerTv.maxLines = 1
+        timerTv.setAutoSizeTextTypeUniformWithConfiguration(18, 46, 2, android.util.TypedValue.COMPLEX_UNIT_SP)
         timerTv.text = swText()
         swBox.addView(timerTv, LinearLayout.LayoutParams(MATCH, WRAP))
         val swRow = LinearLayout(act)
@@ -641,8 +903,10 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         val rainCard = FrameLayout(act)
         rainCard.background = cardBg()
         rainCard.clipToOutline = true
-        val rainLabel = smallLabel("TAP FOR SOUND")
-        rainCard.addView(RainView(act) { rainLabel.text = it }, FrameLayout.LayoutParams(MATCH, MATCH))
+        val rainLabel = smallLabel("TAP TO PLAY")
+        lateinit var soundView: RainView
+        soundView = RainView(act, { rainLabel.text = it }, { launch(it) }, { soundMenu { soundView.reload() } })
+        rainCard.addView(soundView, FrameLayout.LayoutParams(MATCH, MATCH))
         rainCard.addView(rainLabel, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM))
 
         val slide = ExitSlideView(act) { confirmExit() }
@@ -762,6 +1026,8 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         clock.show((remSec / 60L).toInt(), Color.WHITE)
         timerTv.text = swText()
         val swOn = Store.swRunning(act)
+        swHandler.removeCallbacks(swTick)
+        if (swOn) swHandler.post(swTick)
         if (swOn != lastSwRunning) {
             lastSwRunning = swOn
             swBtn.kind = if (swOn) IconView.PAUSE else IconView.PLAY
