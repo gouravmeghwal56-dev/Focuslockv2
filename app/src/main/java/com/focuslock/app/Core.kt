@@ -338,10 +338,16 @@ class BlockService : AccessibilityService() {
                 if (capture && dbgIds.size < 400) dbgIds.add(id + (if (node.isClickable) " [click]" else "") + (if (node.isSelected) " [sel]" else ""))
                 // Snapchat: bottom bar me Spotlight tab selected ho to Spotlight khuli hai
                 if (!hit && id.endsWith("ngs_spotlight_icon_container") && selectedDeep(node, 2)) hit = true
+                // Snapchat: Spotlight video ka "favorite" (heart) button sirf Spotlight pe dikhta hai
+                if (!hit && id == "com.snapchat.android:id/favorite") hit = true
                 if (!hit && !node.isClickable) {
                     val low = id.lowercase()
                     if (genericKeys.any { low.contains(it) }) hit = true
                 }
+            }
+            if (capture && dbgIds.size < 400 && node.isVisibleToUser) {
+                val d = (node.contentDescription?.toString() ?: node.text?.toString() ?: "").trim()
+                if (d.isNotEmpty()) dbgIds.add("txt:" + d.take(40) + (if (node.isSelected) " [sel]" else ""))
             }
             // Fallback: jin apps me view ID nahi hote (Snapchat), selected tab ka naam dekho
             if (!hit && node.isSelected && node.isVisibleToUser) {
