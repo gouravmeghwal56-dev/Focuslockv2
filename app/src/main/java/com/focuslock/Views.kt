@@ -2,14 +2,20 @@ package com.focuslock.app
 
 import android.animation.ValueAnimator
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.view.MotionEvent
+import android.view.VelocityTracker
+import android.view.ViewConfiguration
+import android.view.animation.DecelerateInterpolator
+import java.util.Random
 import android.view.View
 
 val C_ORANGE = Color.parseColor("#FF6A0A")
@@ -47,6 +53,8 @@ class IconView(ctx: Context, var kind: Int) : View(ctx) {
         const val RESET = 9
         const val UP = 10
         const val DOWN = 11
+        const val DETOX = 12
+        const val PAUSE = 13
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -163,6 +171,15 @@ class IconView(ctx: Context, var kind: Int) : View(ctx) {
                 path.lineTo(x(18f), y(15f))
                 canvas.drawPath(path, p)
             }
+            PAUSE -> {
+                p.style = Paint.Style.FILL
+                rr(6.5f, 5f, 10.5f, 19f, 1.2f)
+                rr(13.5f, 5f, 17.5f, 19f, 1.2f)
+            }
+            DETOX -> {
+                canvas.drawCircle(x(12f), y(12f), 8.5f * u, p)
+                canvas.drawLine(x(6f), y(18f), x(18f), y(6f), p)
+            }
             DOWN -> {
                 p.strokeWidth = 2.2f * u
                 path.reset()
@@ -175,9 +192,129 @@ class IconView(ctx: Context, var kind: Int) : View(ctx) {
     }
 }
 
-class PixelClockView(ctx: Context) : View(ctx) {
+
+/**
+ * Base view: content is drawn into an offscreen bitmap. assemble() then rebuilds it on screen
+ * from scattered pixel blocks (blockit style), so bags AND digits "build" themselves.
+ */
+abstract class AssembleView(ctx: Context) : View(ctx) {
+    private var buf: Bitmap? = null
+    private var bufCanvas: Canvas? = null
+    private var dirty = true
+    private var prog = 1f
+    private var anim: ValueAnimator? = null
+    private val cell = (ctx.resources.displayMetrics.density * 6f).toInt().coerceAtLeast(4)
+    private var cols = 0
+    private var rows = 0
+    private var thr = FloatArray(0)
+    private var offX = FloatArray(0)
+    private var offY = FloatArray(0)
+    private val src = Rect()
+    private val dst = RectF()
+    private val bp = Paint()
+
+    protected abstract fun drawContent(c: Canvas)
+
+    override fun invalidate() {
+        dirty = true
+        super.invalidate()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        super.onSizeChanged(w, h, ow, oh)
+        buf?.recycle()
+        buf = null
+        bufCanvas = null
+        dirty = true
+        cols = (w + cell - 1) / cell
+        rows = (h + cell - 1) / cell
+        val n = cols * rows
+        val r = Random(7)
+        thr = FloatArray(n) { r.nextFloat() * 0.62f }
+        offX = FloatArray(n) { (r.nextFloat() - 0.5f) * 2f }
+        offY = FloatArray(n) { (r.nextFloat() - 0.5f) * 2f }
+    }
+
+    fun assemble(duration: Long = 750L) {
+        anim?.cancel()
+        prog = 0f
+        val a = ValueAnimator.ofFloat(0f, 1f)
+        a.duration = duration
+        a.addUpdateListener {
+            prog = it.animatedValue as Float
+            super.invalidate()
+        }
+        a.start()
+        anim = a
+        super.invalidate()
+    }
+
+    override fun onDetachedFromWindow() {
+        anim?.cancel()
+        super.onDetachedFromWindow()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        if (width <= 0 || height <= 0) return
+        var b = buf
+        if (b == null) {
+            b = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            buf = b
+            bufCanvas = Canvas(b)
+            dirty = true
+        }
+        if (dirty) {
+            b.eraseColor(Color.TRANSPARENT)
+            drawContent(bufCanvas!!)
+            dirty = false
+        }
+        if (prog >= 1f) {
+            canvas.drawBitmap(b, 0f, 0f, null)
+            return
+        }
+        val k = 0.38f
+        for (cy in 0 until rows) {
+            for (cx in 0 until cols) {
+                val i = cy * cols + cx
+                val local = ((prog - thr[i]) / k).coerceIn(0f, 1f)
+                if (local <= 0f) continue
+                val l = cx * cell
+                val t = cy * cell
+                val r = minOf(l + cell, width)
+                val bt = minOf(t + cell, height)
+                src.set(l, t, r, bt)
+                val half = (r - l) / 2f * local
+                val halfH = (bt - t) / 2f * local
+                val sh = (1f - local) * cell * 2.2f
+                val mx = (l + r) / 2f + offX[i] * sh
+                val my = (t + bt) / 2f + offY[i] * sh
+                dst.set(mx - half, my - halfH, mx + half, my + halfH)
+                canvas.drawBitmap(b, src, dst, bp)
+            }
+        }
+    }
+}
+
+class PixelClockView(ctx: Context) : AssembleView(ctx) {
     private var text = "0000"
     private var color = C_ORANGE
+    private var pair = false
+    private var pairText = "00:00 00:00"
+    private var slots: BooleanArray? = null
+    private var slotColor = C_ORANGE
+    private val font = arrayOf(
+        "11111,10001,10001,10001,10001,10001,11111",
+        "00100,01100,00100,00100,00100,00100,01110",
+        "11111,00001,00001,11111,10000,10000,11111",
+        "11111,00001,00001,01111,00001,00001,11111",
+        "10001,10001,10001,11111,00001,00001,00001",
+        "11111,10000,10000,11111,00001,00001,11111",
+        "11111,10000,10000,11111,10001,10001,11111",
+        "11111,00001,00001,00010,00100,00100,00100",
+        "11111,10001,10001,11111,10001,10001,11111",
+        "11111,10001,10001,11111,00001,00001,11111"
+    ).map { it.split(",") }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
     private val masks = arrayOf("abcdef", "bc", "abdeg", "abcdg", "bcfg", "acdfg", "acdefg", "abc", "abcdefg", "abcdfg")
@@ -187,11 +324,72 @@ class PixelClockView(ctx: Context) : View(ctx) {
         val m = totalMin % 60
         text = String.format("%02d%02d", h, m)
         color = c
+        pair = false
         invalidate()
     }
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
+    /** Routine style: "23:55  05:30" in pixel font + 48 half-hour timeline squares under it. */
+    fun showPair(startMin: Int, endMin: Int, c: Int, slotC: Int) {
+        pairText = String.format("%02d:%02d %02d:%02d", startMin / 60, startMin % 60, endMin / 60, endMin % 60)
+        color = c
+        slotColor = slotC
+        fun inR(m: Int) = if (startMin < endMin) m in startMin until endMin else (m >= startMin || m < endMin)
+        slots = BooleanArray(48) { i ->
+            val a = i * 30
+            startMin != endMin && (inR(a) || inR(a + 29) || startMin in a..(a + 29))
+        }
+        pair = true
+        invalidate()
+    }
+
+    private fun drawPair(canvas: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        // columns: digit=5, gap=1, colon=1, group gap=3
+        val cols = 54
+        val px = (w * 0.94f) / cols
+        val x0 = (w - px * cols) / 2f
+        val dh = px * 7f
+        val barH = px * 0.9f * 1.0f
+        val totalH = dh + px * 3.5f + barH
+        val y0 = (h - totalH) / 2f
+        paint.color = color
+        var cx = 0
+        for (ch in pairText) {
+            when {
+                ch == ' ' -> cx += 2
+                ch == ':' -> {
+                    canvas.drawRect(x0 + cx * px, y0 + px * 2f, x0 + (cx + 1) * px, y0 + px * 3f, paint)
+                    canvas.drawRect(x0 + cx * px, y0 + px * 4f, x0 + (cx + 1) * px, y0 + px * 5f, paint)
+                    cx += 2
+                }
+                else -> {
+                    val g = font[ch - '0']
+                    for (r in 0 until 7) for (q in 0 until 5) {
+                        if (g[r][q] == '1') {
+                            canvas.drawRect(x0 + (cx + q) * px, y0 + r * px, x0 + (cx + q + 1) * px, y0 + (r + 1) * px, paint)
+                        }
+                    }
+                    cx += 6
+                }
+            }
+        }
+        val sl = slots ?: return
+        val pitch = (px * cols) / 48f
+        val sq = pitch * 0.78f
+        val by = y0 + dh + px * 3.5f
+        for (i in 0 until 48) {
+            paint.color = if (sl[i]) slotColor else C_TILE
+            val sx = x0 + i * pitch
+            canvas.drawRect(sx, by, sx + sq, by + sq, paint)
+        }
+    }
+
+    override fun drawContent(canvas: Canvas) {
+        if (pair) {
+            drawPair(canvas)
+            return
+        }
         paint.color = color
         val w = width.toFloat()
         val h = height.toFloat()
@@ -256,12 +454,15 @@ class DotsView(ctx: Context) : View(ctx) {
     }
 }
 
-class BagsView(ctx: Context) : View(ctx) {
+class BagsView(ctx: Context) : AssembleView(ctx) {
     var active = 0
+        set(v) {
+            field = v
+            invalidate()
+        }
     private val paint = Paint()
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
+    override fun drawContent(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
         val cw = w / 3f
@@ -512,5 +713,268 @@ class SlideView(ctx: Context, private val onDone: () -> Unit) : View(ctx) {
             }
         }
         return true
+    }
+}
+
+/** Vertical on/off slider for a weekday (thumb on top = ON, bottom = OFF). */
+class DayToggleView(ctx: Context, on: Boolean, private val onToggle: (Boolean) -> Boolean) : View(ctx) {
+    private var pos = if (on) 0f else 1f
+    private var isOn = on
+    private var anim: ValueAnimator? = null
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rect = RectF()
+    private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
+    private var downY = 0f
+    private var moved = false
+
+    private fun go(to: Float) {
+        anim?.cancel()
+        val a = ValueAnimator.ofFloat(pos, to)
+        a.duration = 260
+        a.interpolator = DecelerateInterpolator()
+        a.addUpdateListener {
+            pos = it.animatedValue as Float
+            invalidate()
+        }
+        a.start()
+        anim = a
+    }
+
+    private fun setOn(v: Boolean) {
+        if (v == isOn) {
+            go(if (v) 0f else 1f)
+            return
+        }
+        if (onToggle(v)) {
+            isOn = v
+            go(if (v) 0f else 1f)
+        } else {
+            go(if (isOn) 0f else 1f)
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        anim?.cancel()
+        super.onDetachedFromWindow()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val rad = w * 0.28f
+        paint.style = Paint.Style.FILL
+        paint.color = C_TILE
+        rect.set(0f, 0f, w, h)
+        canvas.drawRoundRect(rect, rad, rad, paint)
+        val pad = w * 0.08f
+        val th = (h - pad * 2f) * 0.46f
+        val ty = pad + (h - pad * 2f - th) * pos
+        paint.color = blend(C_ORANGE, Color.parseColor("#8E8886"), pos)
+        rect.set(pad, ty, w - pad, ty + th)
+        canvas.drawRoundRect(rect, rad * 0.8f, rad * 0.8f, paint)
+    }
+
+    private fun blend(a: Int, b: Int, t: Float): Int {
+        val r = (Color.red(a) + (Color.red(b) - Color.red(a)) * t).toInt()
+        val g = (Color.green(a) + (Color.green(b) - Color.green(a)) * t).toInt()
+        val bl = (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * t).toInt()
+        return Color.rgb(r, g, bl)
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.action) {
+            MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                downY = e.y
+                moved = false
+                anim?.cancel()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (Math.abs(e.y - downY) > slop) moved = true
+                if (moved) {
+                    pos = (e.y / height).coerceIn(0f, 1f)
+                    invalidate()
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                if (moved) setOn(pos < 0.5f) else setOn(!isOn)
+            }
+            MotionEvent.ACTION_CANCEL -> go(if (isOn) 0f else 1f)
+        }
+        return true
+    }
+}
+
+/** Horizontal ruler for a time of day (0..1439, 5 min steps, wraps around). */
+class HRulerView(ctx: Context, startValue: Int, private val onChange: (Int) -> Unit) : View(ctx) {
+    var onBlocked: (() -> Boolean)? = null
+    private val dens = ctx.resources.displayMetrics.density
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rect = RectF()
+    private var value = startValue.toFloat()
+    private var reported = startValue
+    private var lastX = 0f
+    private var ignore = false
+    private var vt: VelocityTracker? = null
+    private var fling: ValueAnimator? = null
+
+    private fun pxPerMin() = width / 90f
+
+    fun setMinutes(m: Int) {
+        fling?.cancel()
+        value = m.toFloat()
+        reported = m
+        invalidate()
+    }
+
+    private fun report() {
+        val snapped = (Math.round(value / 5f) * 5).mod(1440)
+        if (snapped != reported) {
+            reported = snapped
+            onChange(snapped)
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        fling?.cancel()
+        super.onDetachedFromWindow()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = dens * 1.5f
+        paint.color = C_LINE
+        rect.set(dens, dens, w - dens, h - dens)
+        canvas.drawRoundRect(rect, h * 0.3f, h * 0.3f, paint)
+
+        val sp = pxPerMin() * 5f
+        val k = value / 5f
+        val cx = w / 2f
+        val n = (w / sp / 2f).toInt() + 2
+        val first = Math.floor((k - n).toDouble()).toInt()
+        val last = Math.ceil((k + n).toDouble()).toInt()
+        paint.strokeWidth = dens * 1.4f
+        for (i in first..last) {
+            val x = cx + (i - k) * sp
+            if (x < h * 0.25f || x > w - h * 0.25f) continue
+            val hr = (i.mod(288))
+            val half = h * (if (hr % 12 == 0) 0.26f else 0.17f)
+            canvas.drawLine(x, h / 2f - half, x, h / 2f + half, paint)
+        }
+        paint.color = C_ORANGE
+        paint.strokeWidth = dens * 3f
+        canvas.drawLine(cx, h * 0.04f, cx, h * 0.26f, paint)
+        canvas.drawLine(cx, h * 0.74f, cx, h * 0.96f, paint)
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.action) {
+            MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                fling?.cancel()
+                lastX = e.x
+                ignore = onBlocked?.invoke() == true
+                vt?.recycle()
+                vt = VelocityTracker.obtain()
+                vt?.addMovement(e)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                vt?.addMovement(e)
+                if (!ignore) {
+                    val dx = e.x - lastX
+                    lastX = e.x
+                    value = (value - dx / pxPerMin()).mod(1440f)
+                    invalidate()
+                    report()
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val t = vt
+                if (t != null && !ignore && e.action == MotionEvent.ACTION_UP) {
+                    t.computeCurrentVelocity(1000)
+                    val dMin = -t.xVelocity / pxPerMin() * 0.35f
+                    val from = value
+                    val a = ValueAnimator.ofFloat(0f, dMin)
+                    a.duration = 600
+                    a.interpolator = DecelerateInterpolator(2f)
+                    a.addUpdateListener {
+                        value = (from + (it.animatedValue as Float)).mod(1440f)
+                        invalidate()
+                        report()
+                    }
+                    a.addListener(object : android.animation.AnimatorListenerAdapter() {
+                        override fun onAnimationEnd(animation: android.animation.Animator) {
+                            value = (Math.round(value / 5f) * 5f).mod(1440f)
+                            invalidate()
+                            report()
+                        }
+                    })
+                    a.start()
+                    fling = a
+                }
+                t?.recycle()
+                vt = null
+            }
+        }
+        return true
+    }
+}
+
+/** Two "phones" (Shorts / Reels). Orange + slash = blocked, gray = allowed. */
+class DetoxView(ctx: Context) : AssembleView(ctx) {
+    var shorts = false
+        set(v) { field = v; invalidate() }
+    var reels = false
+        set(v) { field = v; invalidate() }
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rect = RectF()
+    private val path = Path()
+
+    override fun drawContent(canvas: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val cw = w / 2f
+        for (i in 0..1) {
+            val on = if (i == 0) shorts else reels
+            val ph = minOf(h * 0.62f, cw * 1.1f)
+            val pw = ph * 0.56f
+            val cx = cw * i + cw / 2f
+            val cy = h * 0.46f
+            paint.style = Paint.Style.FILL
+            paint.color = if (on) C_ORANGE else Color.parseColor("#7A706D")
+            rect.set(cx - pw / 2f, cy - ph / 2f, cx + pw / 2f, cy + ph / 2f)
+            canvas.drawRoundRect(rect, pw * 0.16f, pw * 0.16f, paint)
+            paint.color = Color.WHITE
+            val s = pw * 0.2f
+            path.reset()
+            path.moveTo(cx - s * 0.6f, cy - s)
+            path.lineTo(cx + s, cy)
+            path.lineTo(cx - s * 0.6f, cy + s)
+            path.close()
+            canvas.drawPath(path, paint)
+            if (on) {
+                paint.style = Paint.Style.STROKE
+                paint.strokeCap = Paint.Cap.ROUND
+                paint.strokeWidth = pw * 0.2f
+                paint.color = C_BG
+                canvas.drawLine(cx - pw * 0.7f, cy + ph * 0.42f, cx + pw * 0.7f, cy - ph * 0.42f, paint)
+                paint.strokeWidth = pw * 0.1f
+                paint.color = C_DARK
+                canvas.drawLine(cx - pw * 0.7f, cy + ph * 0.42f, cx + pw * 0.7f, cy - ph * 0.42f, paint)
+                paint.style = Paint.Style.FILL
+            }
+            // little squares under each phone
+            val sq = pw * 0.16f
+            paint.color = if (on) C_ORANGE else Color.parseColor("#7A706D")
+            for (k in 0..2) {
+                val sx = cx - sq * 2.6f / 2f * 1.0f + k * sq * 1.3f - sq * 0.5f + sq * 0.0f
+                canvas.drawRect(sx, cy + ph / 2f + sq, sx + sq, cy + ph / 2f + sq * 2f, paint)
+            }
+        }
     }
 }
