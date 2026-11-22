@@ -353,7 +353,7 @@ class RainView(
     private fun updateLabel() {
         val it = items.getOrNull(idx) ?: return
         val hint = when {
-            it.pkg != null && !hasAccess -> "TAP TO ALLOW ACCESS"
+            it.pkg != null && !hasAccess -> "TAP TO OPEN"
             it.pkg != null -> "TAP TITLE TO OPEN"
             playing() -> "TAP TO STOP"
             else -> "TAP TO PLAY"
@@ -383,7 +383,8 @@ class RainView(
         val it = items.getOrNull(idx) ?: return
         if (it.pkg != null) {
             if (!hasAccess) {
-                onAccess()
+                // access nahi hai to bhi app khulna chahiye (music start ho sake); Settings yahan se nahi kholte
+                onLaunch(it.pkg)
                 return
             }
             val w = width.toFloat()
@@ -651,10 +652,10 @@ class RainView(
         if (!hasAccess) {
             tp.color = Color.WHITE
             tp.textSize = dens * 14f
-            canvas.drawText(fit("Allow notification access", w * 0.88f), w / 2f, h * 0.50f, tp)
+            canvas.drawText(fit("Tap to open and play", w * 0.88f), w / 2f, h * 0.50f, tp)
             tp.color = Color.parseColor("#8A8A8A")
             tp.textSize = dens * 12f
-            canvas.drawText(fit("to see track + controls here", w * 0.88f), w / 2f, h * 0.59f, tp)
+            canvas.drawText(fit("Long-press: allow access for controls", w * 0.88f), w / 2f, h * 0.59f, tp)
             return
         }
         val m = media
@@ -1034,13 +1035,20 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     private fun soundMenu(reload: () -> Unit) {
         val have = Store.soundApps(act)
         val opts = ArrayList<String>()
+        val acts = ArrayList<() -> Unit>()
         opts.add("Add music app (Spotify, YT Music...)")
-        if (have.isNotEmpty()) opts.add("Remove app")
+        acts.add { pickSoundApp(reload) }
+        if (have.isNotEmpty()) {
+            opts.add("Remove app")
+            acts.add { removeSoundApp(reload) }
+        }
+        if (!Media.hasAccess(act)) {
+            opts.add("Allow notification access (track + controls)")
+            acts.add { openAccess() }
+        }
         AlertDialog.Builder(act)
             .setTitle("Sound tile")
-            .setItems(opts.toTypedArray()) { _, i ->
-                if (i == 0) pickSoundApp(reload) else removeSoundApp(reload)
-            }
+            .setItems(opts.toTypedArray()) { _, i -> acts[i]() }
             .show()
     }
 
@@ -1058,7 +1066,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
             .distinctBy { it.first }
             .sortedWith(compareBy({ it.first !in known }, { it.second.lowercase() }))
         if (apps.isEmpty()) {
-            Toast.makeText(act, "Koi app nahi mila", Toast.LENGTH_SHORT).show()
+            Toast.makeText(act, "No apps found", Toast.LENGTH_SHORT).show()
             return
         }
         AlertDialog.Builder(act)
@@ -1089,7 +1097,11 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
 
     // Music ka track + controls dikhane ke liye Notification access chahiye (session se pehle on karo)
     private fun openAccess() {
-        Toast.makeText(act, "FocusLock ko Notification access do, phir wapas aao", Toast.LENGTH_LONG).show()
+        if (Store.sessionOn(act)) {
+            Toast.makeText(act, "Session is running and Settings is blocked. Turn this on before starting a session.", Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(act, "Allow Notification access for FocusLock, then come back", Toast.LENGTH_LONG).show()
         try {
             act.startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         } catch (e: Exception) {
