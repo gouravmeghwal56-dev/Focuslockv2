@@ -154,13 +154,13 @@ class MainActivity : Activity() {
     }
 
     private fun tileBg(sel: Boolean, custom: Boolean = false): android.graphics.drawable.Drawable {
-        val uw = C_THEME_ID == "underwater"
+        val uw = C_THEME_ID == "underwater" || C_THEME_ID == "desert"
         val r = dp(if (uw) 28 else 20).toFloat()
         val cardArt = Art.get(this, "card")
         if (custom && cardArt != null) return TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, r, cardArt, false, 0, if (sel) C_PRIMARY else 0)
         if (Art.get(this, "bg") != null) {
             val soft = (C_TILE and 0x00FFFFFF) or (0xC8 shl 24)
-            if (uw) return TileBg(0xEBE3F1EE.toInt(), 0xF2FFFFFF.toInt(), C_HILL, r, null, true, 0, if (sel) C_PRIMARY else 0)
+            if (uw) return TileBg(if (C_THEME_ID == "desert") (C_TILE and 0x00FFFFFF) or (0xEB shl 24) else 0xEBE3F1EE.toInt(), 0xF2FFFFFF.toInt(), C_HILL, r, null, true, 0, if (sel) C_PRIMARY else 0)
             return TileBg(soft, soft, C_HILL, r, null, true, 0, if (sel) C_PRIMARY else 0)
         }
         return if (sel) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, r) else TileBg(C_TILE, C_TILE, C_HILL, r)
