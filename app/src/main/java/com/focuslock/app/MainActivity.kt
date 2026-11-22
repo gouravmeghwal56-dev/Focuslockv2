@@ -141,7 +141,7 @@ class MainActivity : Activity() {
         t.gravity = Gravity.CENTER
         t.textSize = 16f
         t.setTextColor(if (selected) Color.WHITE else C_TXT)
-        t.background = rounded(if (selected) C_DARK else C_TILE, 20)
+        t.background = rounded(if (selected) C_PRIMARY else C_TILE, 20)
         t.setOnClickListener { onClick() }
         t.setOnTouchListener { v, ev ->
             when (ev.action) {
@@ -156,7 +156,7 @@ class MainActivity : Activity() {
     private fun styleTile(t: TextView?, sel: Boolean) {
         if (t == null) return
         t.setTextColor(if (sel) Color.WHITE else C_TXT)
-        t.background = rounded(if (sel) C_DARK else C_TILE, 20)
+        t.background = rounded(if (sel) C_PRIMARY else C_TILE, 20)
     }
 
     private fun hrow(vararg v: View): LinearLayout {
@@ -209,6 +209,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Themes.load(this)
         loadApps()
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED
@@ -218,6 +219,18 @@ class MainActivity : Activity() {
         bagSel = Store.activeBag(this)
         val wide = resources.displayMetrics.widthPixels > resources.displayMetrics.heightPixels
         isWide = wide
+        buildUi(false)
+        origStatus = window.statusBarColor
+        origNav = window.navigationBarColor
+        origUi = window.decorView.systemUiVisibility
+    }
+
+    /** Builds the whole screen from the current C_* colours. Called again for a live theme change. */
+    private fun buildUi(fade: Boolean) {
+        val wide = isWide
+        railBtns.clear()
+        clockColor = C_ORANGE
+        clockTarget = C_ORANGE
 
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
@@ -251,10 +264,172 @@ class MainActivity : Activity() {
         }
         root.addView(body, LinearLayout.LayoutParams(MATCH, 0, 1f))
         normalRoot = root
-        origStatus = window.statusBarColor
-        origNav = window.navigationBarColor
-        origUi = window.decorView.systemUiVisibility
         setContentView(root)
+        if (fade) {
+            root.alpha = 0f
+            root.animate().alpha(1f).setDuration(220).start()
+            root.post {
+                render()
+                updateLeft()
+                styleRail()
+            }
+        }
+    }
+
+    // ---------- Theme picker (live preview) ----------
+    private fun showThemePicker() {
+        val savedId = Themes.savedId(this)
+        var curId = savedId
+        var confirmed = false
+        val boxBg = Color.parseColor("#F6F2F1")
+
+        val root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.setPadding(dp(18), dp(16), dp(18), dp(14))
+        root.background = rounded(boxBg, 28)
+
+        val title = TextView(this)
+        title.text = "Theme"
+        title.textSize = 16f
+        title.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        title.setTextColor(Color.parseColor("#403B39"))
+        title.gravity = Gravity.CENTER
+        root.addView(title, LinearLayout.LayoutParams(MATCH, WRAP))
+
+        val grid = LinearLayout(this)
+        grid.orientation = LinearLayout.VERTICAL
+        val cards = ArrayList<Pair<AppTheme, LinearLayout>>()
+
+        fun styleCards() {
+            for ((t, c) in cards) {
+                val g = rounded(t.bg, 16)
+                g.setStroke(if (t.id == curId) dp(3) else dp(1), if (t.id == curId) t.accent else t.line)
+                c.background = g
+            }
+        }
+        fun pick(t: AppTheme) {
+            if (t.id == curId) return
+            curId = t.id
+            Themes.apply(t)
+            styleCards()
+            buildUi(true)
+        }
+        fun card(t: AppTheme): LinearLayout {
+            val c = LinearLayout(this)
+            c.orientation = LinearLayout.VERTICAL
+            c.gravity = Gravity.CENTER_HORIZONTAL
+            c.setPadding(dp(8), dp(10), dp(8), dp(10))
+            val n = TextView(this)
+            n.text = t.name
+            n.textSize = 14f
+            n.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            n.setTextColor(t.ink)
+            n.gravity = Gravity.CENTER
+            c.addView(n, LinearLayout.LayoutParams(WRAP, WRAP))
+            val dots = LinearLayout(this)
+            dots.orientation = LinearLayout.HORIZONTAL
+            dots.gravity = Gravity.CENTER
+            for (col in intArrayOf(t.primary, t.accent, t.ink, t.tile)) {
+                val d = View(this)
+                val g = oval(col)
+                g.setStroke(dp(1), t.line)
+                d.background = g
+                val dl = LinearLayout.LayoutParams(dp(18), dp(18))
+                dl.setMargins(dp(3), dp(7), dp(3), 0)
+                dots.addView(d, dl)
+            }
+            c.addView(dots, LinearLayout.LayoutParams(WRAP, WRAP))
+            c.setOnClickListener { pick(t) }
+            return c
+        }
+
+        val list = Themes.all
+        var i = 0
+        while (i < list.size) {
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            for (j in 0 until 2) {
+                if (i + j < list.size) {
+                    val t = list[i + j]
+                    val c = card(t)
+                    cards.add(t to c)
+                    val l = LinearLayout.LayoutParams(0, WRAP, 1f)
+                    l.setMargins(dp(4), dp(4), dp(4), dp(4))
+                    row.addView(c, l)
+                } else {
+                    row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+                }
+            }
+            grid.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
+            i += 2
+        }
+        styleCards()
+
+        val sv = android.widget.ScrollView(this)
+        sv.addView(grid)
+        val svLp = LinearLayout.LayoutParams(MATCH, dp(300))
+        svLp.topMargin = dp(8)
+        root.addView(sv, svLp)
+
+        val dlg = AlertDialog.Builder(this).setView(root).create()
+
+        val btns = LinearLayout(this)
+        btns.orientation = LinearLayout.HORIZONTAL
+        btns.gravity = Gravity.CENTER
+        val cancel = TextView(this)
+        cancel.text = "Cancel"
+        cancel.textSize = 15f
+        cancel.setTextColor(Color.parseColor("#403B39"))
+        cancel.gravity = Gravity.CENTER
+        cancel.background = rounded(Color.parseColor("#EBE6E6"), 24)
+        cancel.setOnClickListener { dlg.dismiss() }
+        val ok = TextView(this)
+        ok.text = "Apply"
+        ok.textSize = 15f
+        ok.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        ok.setTextColor(Color.WHITE)
+        ok.gravity = Gravity.CENTER
+        ok.background = rounded(Color.parseColor("#403B39"), 24)
+        ok.setOnClickListener {
+            confirmed = true
+            Themes.save(this, curId)
+            dlg.dismiss()
+        }
+        val b1 = LinearLayout.LayoutParams(dp(110), dp(46))
+        b1.rightMargin = dp(8)
+        btns.addView(cancel, b1)
+        btns.addView(ok, LinearLayout.LayoutParams(dp(130), dp(46)))
+        val bLp = LinearLayout.LayoutParams(WRAP, WRAP)
+        bLp.topMargin = dp(10)
+        bLp.gravity = Gravity.CENTER_HORIZONTAL
+        root.addView(btns, bLp)
+
+        // cancel / tap outside => go back to the saved theme
+        dlg.setOnDismissListener {
+            if (!confirmed && curId != savedId) {
+                Themes.apply(Themes.byId(savedId))
+                buildUi(true)
+            }
+        }
+
+        dlg.window?.let { w ->
+            w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            w.setDimAmount(0.10f)
+            val land = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            if (land) {
+                w.setGravity(Gravity.END or Gravity.CENTER_VERTICAL)
+                val lp = w.attributes
+                lp.x = dp(80)
+                w.attributes = lp
+            } else {
+                w.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+                val lp = w.attributes
+                lp.y = dp(24)
+                w.attributes = lp
+            }
+            w.setLayout(dp(300), WRAP)
+        }
+        dlg.show()
     }
 
     private fun circleBtn(kind: Int, onClick: () -> Unit): IconView {
@@ -271,7 +446,7 @@ class MainActivity : Activity() {
             .setItems(arrayOf("Profile", "Theme", "Accessibility settings")) { _, i ->
                 when (i) {
                     0 -> showProfile()
-                    1 -> toast("Theme: coming soon")
+                    1 -> showThemePicker()
                     else -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 }
             }
@@ -382,7 +557,7 @@ class MainActivity : Activity() {
         val play = IconView(this, IconView.PLAY)
         play.tint = Color.WHITE
         play.setPadding(dp(30), dp(14), dp(30), dp(14))
-        play.background = rounded(C_DARK, 28)
+        play.background = rounded(C_PRIMARY, 28)
         play.setOnClickListener {
             if (Store.active(this)) toast("A session is already running") else startFocus()
         }
@@ -457,7 +632,7 @@ class MainActivity : Activity() {
 
     private fun styleRail() {
         for (i in railBtns.indices) {
-            railBtns[i].background = if (i == tab) rounded(C_DARK, 26) else null
+            railBtns[i].background = if (i == tab) rounded(C_PRIMARY, 26) else null
             railBtns[i].tint = if (i == tab) Color.WHITE else C_DARK
         }
     }
@@ -587,7 +762,7 @@ class MainActivity : Activity() {
                 pc.showPair(
                     Store.rtStart(this, rtSel), Store.rtEnd(this, rtSel),
                     if (on) C_ORANGE else C_GRAY,
-                    if (on) C_ORANGE else Color.parseColor("#F2B89C")
+                    if (on) C_ORANGE else C_SOFT
                 )
             }
             4 -> {
@@ -669,7 +844,7 @@ class MainActivity : Activity() {
         root.orientation = LinearLayout.VERTICAL
         root.gravity = Gravity.CENTER_HORIZONTAL
         root.setPadding(dp(22), dp(18), dp(22), dp(16))
-        root.background = rounded(Color.parseColor("#F6F2F1"), 28)
+        root.background = rounded(C_BG, 28)
 
         val title = TextView(this)
         title.text = "Custom time"
@@ -800,7 +975,7 @@ class MainActivity : Activity() {
         ok.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         ok.setTextColor(Color.WHITE)
         ok.gravity = Gravity.CENTER
-        ok.background = rounded(C_DARK, 24)
+        ok.background = rounded(C_PRIMARY, 24)
         ok.setOnClickListener {
             val t = total()
             if (t in 1..1440) {
@@ -1038,7 +1213,7 @@ class MainActivity : Activity() {
                 cell.setOnClickListener { showPicker() }
             } else {
                 val lk = IconView(this, IconView.LOCK)
-                lk.tint = Color.parseColor("#F0A98B")
+                lk.tint = C_SOFT
                 val lp = FrameLayout.LayoutParams(dp(30), dp(34))
                 lp.gravity = Gravity.CENTER
                 cell.addView(lk, lp)
@@ -1168,7 +1343,7 @@ class MainActivity : Activity() {
         sb.append("  \u00B7  ")
         val st = sb.length
         sb.append(dur)
-        sb.setSpan(ForegroundColorSpan(if (on) C_ORANGE else Color.parseColor("#F2B89C")), st, sb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        sb.setSpan(ForegroundColorSpan(if (on) C_ORANGE else C_SOFT), st, sb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         return sb
     }
 
@@ -1513,7 +1688,7 @@ class MainActivity : Activity() {
         root.orientation = LinearLayout.VERTICAL
         root.gravity = Gravity.CENTER_HORIZONTAL
         root.setPadding(dp(22), dp(20), dp(22), dp(18))
-        root.background = rounded(Color.parseColor("#F6F2F1"), 28)
+        root.background = rounded(C_BG, 28)
         val title = TextView(this)
         title.text = "Pick month"
         title.textSize = 18f
@@ -1563,7 +1738,7 @@ class MainActivity : Activity() {
         ok.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         ok.setTextColor(Color.WHITE)
         ok.gravity = Gravity.CENTER
-        ok.background = rounded(C_DARK, 24)
+        ok.background = rounded(C_PRIMARY, 24)
         ok.setOnClickListener {
             val c = Calendar.getInstance()
             c.clear()
