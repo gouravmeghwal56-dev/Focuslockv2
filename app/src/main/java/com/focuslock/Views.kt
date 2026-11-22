@@ -1360,7 +1360,7 @@ class HalfScrollView(ctx: Context) : android.widget.ScrollView(ctx) {
 
 
 /** Tile background: optional vertical gradient (selected tiles) and soft hills at the bottom (themes). */
-class TileBg(private val base: Int, private val top: Int, private val hill: Int, private val rPx: Float, private val art: Bitmap? = null, private val ridge: Boolean = false) :
+class TileBg(private val base: Int, private val top: Int, private val hill: Int, private val rPx: Float, private val art: Bitmap? = null, private val ridge: Boolean = false, private val veil: Int = 0) :
     android.graphics.drawable.Drawable() {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
@@ -1386,7 +1386,7 @@ class TileBg(private val base: Int, private val top: Int, private val hill: Int,
             val dst = RectF(l + (w - sw) / 2f, t + (h - sh) / 2f, l + (w + sw) / 2f, t + (h + sh) / 2f)
             p.isFilterBitmap = true
             c.drawBitmap(art, null, dst, p)
-            p.color = 0x2A3F281B
+            p.color = if (veil != 0) veil else 0x2A3F281B
             c.drawRect(rf, p)
             c.restore()
             return
