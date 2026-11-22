@@ -134,12 +134,13 @@ class PixelNumberView(ctx: Context) : View(ctx) {
         val w = width.toFloat()
         val h = height.toFloat()
         val gap = 0.25f
-        val dw = minOf(w * 0.8f / (n + gap * (n - 1)), h * 0.8f / 1.6f)
+        // Blockit jaisa: chhote digits, label ke paas (thode niche shift)
+        val dw = minOf(w * 0.42f / (n + gap * (n - 1)), h * 0.40f / 1.6f)
         val dh = dw * 1.6f
         val t = dw * 0.30f
         val total = dw * n + dw * gap * (n - 1)
         var x = (w - total) / 2f
-        val y = (h - dh) / 2f
+        val y = (h - dh) / 2f + dh * 0.35f
         for (ch in text) {
             val d = ch - '0'
             if (d in 0..9) drawDigit(canvas, d, x, y, dw, dh, t)
@@ -299,7 +300,7 @@ class RainView(
     private fun load() {
         val pm = context.packageManager
         val list = ArrayList<Item>()
-        for (m in 1..Ambient.COUNT) list.add(Item(m, null, Ambient.NAMES[m]))
+        // music apps pehle (start me), uske baad Rain / ambient sounds
         for (pkg in Store.soundApps(context)) {
             try {
                 val label = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
@@ -307,6 +308,7 @@ class RainView(
             } catch (e: Exception) {
             }
         }
+        for (m in 1..Ambient.COUNT) list.add(Item(m, null, Ambient.NAMES[m]))
         items = list
         val cur = items.indexOfFirst { it.pkg == null && it.mode == Ambient.mode }
         idx = if (cur >= 0) cur else Store.sndIdx(context).coerceIn(0, items.size - 1)
@@ -939,6 +941,8 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
             .setTitle("Add music app")
             .setItems(apps.map { it.second }.toTypedArray()) { _, w ->
                 Store.addSoundApp(act, apps[w].first)
+                // naya app list me pehle number pe hai, wahi dikhao
+                Store.setSndIdx(act, Store.soundApps(act).indexOf(apps[w].first).coerceAtLeast(0))
                 reload()
             }
             .show()
@@ -1089,6 +1093,9 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         secView = PixelNumberView(act)
         secCard.addView(secView, LinearLayout.LayoutParams(MATCH, 0, 1f))
         secCard.addView(smallLabel("SEC"), LinearLayout.LayoutParams(MATCH, WRAP))
+
+        // Big HH:MM digits: apne hisse ke center se halka upar (neeche stopwatch hai)
+        clock.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> clock.dyShift = -clock.height * 0.05f }
 
         // +15 HOLD tile
         val holdCard = FrameLayout(act)
