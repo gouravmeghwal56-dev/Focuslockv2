@@ -1360,7 +1360,7 @@ class HalfScrollView(ctx: Context) : android.widget.ScrollView(ctx) {
 
 
 /** Tile background: optional vertical gradient (selected tiles) and soft hills at the bottom (themes). */
-class TileBg(private val base: Int, private val top: Int, private val hill: Int, private val rPx: Float, private val art: Bitmap? = null, private val ridge: Boolean = false, private val veil: Int = 0) :
+class TileBg(private val base: Int, private val top: Int, private val hill: Int, private val rPx: Float, private val art: Bitmap? = null, private val ridge: Boolean = false, private val veil: Int = 0, private val ring: Int = 0) :
     android.graphics.drawable.Drawable() {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
@@ -1389,6 +1389,7 @@ class TileBg(private val base: Int, private val top: Int, private val hill: Int,
             p.color = if (veil != 0) veil else 0x2A3F281B
             c.drawRect(rf, p)
             c.restore()
+            drawRing(c)
             return
         }
         p.shader = if (top != base) LinearGradient(0f, t, 0f, t + h, top, base, Shader.TileMode.CLAMP) else null
@@ -1433,6 +1434,19 @@ class TileBg(private val base: Int, private val top: Int, private val hill: Int,
             c.drawPath(path, p)
         }
         c.restore()
+        drawRing(c)
+    }
+
+    private fun drawRing(c: Canvas) {
+        if (ring == 0) return
+        val sw = rPx * 0.14f
+        p.shader = null
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = sw
+        p.color = ring
+        val r2 = RectF(rf.left + sw / 2f, rf.top + sw / 2f, rf.right - sw / 2f, rf.bottom - sw / 2f)
+        c.drawRoundRect(r2, rPx - sw / 2f, rPx - sw / 2f, p)
+        p.style = Paint.Style.FILL
     }
 
     override fun setAlpha(alpha: Int) {}
