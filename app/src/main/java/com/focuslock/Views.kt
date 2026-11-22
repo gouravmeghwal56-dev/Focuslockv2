@@ -1399,7 +1399,7 @@ class TileBg(private val base: Int, private val top: Int, private val hill: Int,
         if (ridge && hill != 0) {
             val far = floatArrayOf(0f, .80f, .14f, .70f, .28f, .79f, .46f, .64f, .64f, .78f, .82f, .68f, 1f, .77f)
             val near = floatArrayOf(0f, .90f, .20f, .82f, .40f, .91f, .62f, .80f, .82f, .90f, 1f, .84f)
-            val layers = arrayOf(far to 0x26, near to 0x34)
+            val layers = if (C_THEME_ID == "underwater") arrayOf(far to 0x44, near to 0x66) else arrayOf(far to 0x26, near to 0x34)
             for ((pts, a) in layers) {
                 p.color = (hill and 0x00FFFFFF) or (a shl 24)
                 path.reset()
@@ -1505,6 +1505,22 @@ class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.d
         val sh = art.height * sc
         dst.set(b.left.toFloat(), b.bottom - sh, b.left + sw, b.bottom.toFloat())
         p.isFilterBitmap = true
+        if (C_THEME_ID == "underwater") {
+            // Scene panel (bottom-left of the art) is redrawn smaller so it ends before the right column, with a small bottom margin.
+            val sTop = (art.height * 0.695f).toInt()
+            val sRight = (art.width * 0.5f).toInt() + 1
+            val full = RectF(dst.left, dst.bottom - (art.height - sTop) * sc, dst.left + sRight * sc, dst.bottom)
+            c.save()
+            c.clipRect(full, android.graphics.Region.Op.DIFFERENCE)
+            c.drawBitmap(art, null, dst, p)
+            c.restore()
+            val dw = w * 0.445f
+            val k = dw / sRight
+            val dh = (art.height - sTop) * k
+            val bot = b.bottom - h * 0.025f
+            c.drawBitmap(art, Rect(0, sTop, sRight, art.height), RectF(b.left.toFloat(), bot - dh, b.left + dw, bot), p)
+            return
+        }
         c.drawBitmap(art, null, dst, p)
     }
 
