@@ -836,7 +836,7 @@ class MainActivity : Activity() {
             if (land) {
                 w.setGravity(Gravity.END or Gravity.CENTER_VERTICAL)
                 val lp = w.attributes
-                lp.x = dp(24)
+                lp.x = dp(80)
                 w.attributes = lp
             } else {
                 w.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
