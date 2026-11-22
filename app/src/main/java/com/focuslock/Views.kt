@@ -34,6 +34,16 @@ var C_PRIMARY = Color.parseColor("#403B39")
 var C_SOFT = Color.parseColor("#F2B89C")
 var C_L1: Int = Color.parseColor("#F7C4A5")
 var C_L2: Int = Color.parseColor("#FA9A5C")
+// more theme colours: clock gradient, scene (hills/trees/sun), selected-tile gradient top, tile hills (0 = none)
+var C_CLK_A: Int = Color.parseColor("#4D4846")
+var C_CLK_Z: Int = Color.parseColor("#F45516")
+var C_S1: Int = Color.parseColor("#DAD4D8")
+var C_S2: Int = Color.parseColor("#B8B1B8")
+var C_S3: Int = Color.parseColor("#8E8890")
+var C_S4: Int = Color.parseColor("#6E6870")
+var C_SUN: Int = Color.parseColor("#FFB066")
+var C_PRIMARY_TOP: Int = Color.parseColor("#403B39")
+var C_HILL: Int = 0
 
 // ---------- Custom views ----------
 
@@ -595,11 +605,11 @@ class SceneView(ctx: Context) : View(ctx) {
         }
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
-    private val cFar = Color.parseColor("#DAD4D8")
-    private val cMid = Color.parseColor("#B8B1B8")
-    private val cNear = Color.parseColor("#8E8890")
-    private val cTree = Color.parseColor("#6E6870")
-    private val cSunTop = Color.parseColor("#FFB066")
+    private val cFar: Int get() = C_S1
+    private val cMid: Int get() = C_S2
+    private val cNear: Int get() = C_S3
+    private val cTree: Int get() = C_S4
+    private val cSunTop: Int get() = C_SUN
 
     private fun ridge(c: Canvas, color: Int, w: Float, h: Float, pts: FloatArray) {
         path.reset()
@@ -1333,4 +1343,58 @@ class HalfScrollView(ctx: Context) : android.widget.ScrollView(ctx) {
             v.layoutParams = lp
         }
     }
+}
+
+
+/** Tile background: optional vertical gradient (selected tiles) and soft hills at the bottom (themes). */
+class TileBg(private val base: Int, private val top: Int, private val hill: Int, private val rPx: Float) :
+    android.graphics.drawable.Drawable() {
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val path = Path()
+    private val clip = Path()
+    private val rf = RectF()
+
+    override fun draw(c: Canvas) {
+        val b = bounds
+        rf.set(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat())
+        val l = rf.left
+        val t = rf.top
+        val w = rf.width()
+        val h = rf.height()
+        c.save()
+        clip.reset()
+        clip.addRoundRect(rf, rPx, rPx, Path.Direction.CW)
+        c.clipPath(clip)
+        p.style = Paint.Style.FILL
+        p.shader = if (top != base) LinearGradient(0f, t, 0f, t + h, top, base, Shader.TileMode.CLAMP) else null
+        p.color = base
+        c.drawRect(rf, p)
+        p.shader = null
+        if (hill != 0) {
+            p.color = hill
+            path.reset()
+            path.moveTo(l, t + h * 0.80f)
+            path.quadTo(l + w * 0.25f, t + h * 0.66f, l + w * 0.50f, t + h * 0.80f)
+            path.quadTo(l + w * 0.75f, t + h * 0.92f, l + w, t + h * 0.74f)
+            path.lineTo(l + w, t + h)
+            path.lineTo(l, t + h)
+            path.close()
+            c.drawPath(path, p)
+            p.color = (hill and 0x00FFFFFF) or (0x99 shl 24)
+            path.reset()
+            path.moveTo(l, t + h * 0.90f)
+            path.quadTo(l + w * 0.30f, t + h * 0.82f, l + w * 0.55f, t + h * 0.92f)
+            path.quadTo(l + w * 0.80f, t + h * 1.00f, l + w, t + h * 0.86f)
+            path.lineTo(l + w, t + h)
+            path.lineTo(l, t + h)
+            path.close()
+            c.drawPath(path, p)
+        }
+        c.restore()
+    }
+
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
 }
