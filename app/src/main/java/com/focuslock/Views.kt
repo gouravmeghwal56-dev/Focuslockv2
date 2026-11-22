@@ -353,6 +353,15 @@ class PixelClockView(ctx: Context) : AssembleView(ctx) {
     private val rect = RectF()
     private val masks = arrayOf("abcdef", "bc", "abdeg", "abcdg", "bcfg", "acdfg", "acdefg", "abc", "abcdefg", "abcdfg")
 
+    /** Vertical nudge (px) for the digits; used to line them up with a neighbouring tile. */
+    var dyShift = 0f
+        set(v) {
+            if (field != v) {
+                field = v
+                invalidate()
+            }
+        }
+
     fun show(totalMin: Int, c: Int) {
         val h = (totalMin / 60).coerceIn(0, 99)
         val m = totalMin % 60
@@ -434,7 +443,7 @@ class PixelClockView(ctx: Context) : AssembleView(ctx) {
         val colonW = dw * 0.32f
         val total = dw * 4f + colonW + gap * 4f
         var x = (w - total) / 2f
-        val y = (h - dh) / 2f
+        val y = (h - dh) / 2f + dyShift
         for (i in 0 until 4) {
             if (i == 2) {
                 val cs = t * 0.9f
