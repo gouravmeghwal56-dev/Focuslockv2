@@ -631,6 +631,7 @@ class SceneView(ctx: Context) : View(ctx) {
         val w = width.toFloat()
         val h = height.toFloat()
         p.style = Paint.Style.FILL
+        if (Art.get(context, "bg") != null) return
 
         val art = Art.get(context, "scene")
         if (art != null) {
@@ -1359,7 +1360,7 @@ class HalfScrollView(ctx: Context) : android.widget.ScrollView(ctx) {
 
 
 /** Tile background: optional vertical gradient (selected tiles) and soft hills at the bottom (themes). */
-class TileBg(private val base: Int, private val top: Int, private val hill: Int, private val rPx: Float) :
+class TileBg(private val base: Int, private val top: Int, private val hill: Int, private val rPx: Float, private val art: Bitmap? = null) :
     android.graphics.drawable.Drawable() {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
@@ -1378,6 +1379,18 @@ class TileBg(private val base: Int, private val top: Int, private val hill: Int,
         clip.addRoundRect(rf, rPx, rPx, Path.Direction.CW)
         c.clipPath(clip)
         p.style = Paint.Style.FILL
+        if (art != null) {
+            val sc = maxOf(w / art.width, h / art.height)
+            val sw = art.width * sc
+            val sh = art.height * sc
+            val dst = RectF(l + (w - sw) / 2f, t + (h - sh) / 2f, l + (w + sw) / 2f, t + (h + sh) / 2f)
+            p.isFilterBitmap = true
+            c.drawBitmap(art, null, dst, p)
+            p.color = 0x2A3F281B
+            c.drawRect(rf, p)
+            c.restore()
+            return
+        }
         p.shader = if (top != base) LinearGradient(0f, t, 0f, t + h, top, base, Shader.TileMode.CLAMP) else null
         p.color = base
         c.drawRect(rf, p)
@@ -1444,7 +1457,33 @@ class CardBg(private val fill: Int, private val rPx: Float, private val art: Bit
     override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
 }
 
-/** Optional per-theme art, dropped in res/drawable-nodpi as theme_<id>_scene.png / theme_<id>_branch.png. */
+/** Full-screen background: base colour + theme art scaled to cover, anchored bottom-left. */
+class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.drawable.Drawable() {
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val dst = RectF()
+
+    override fun draw(c: Canvas) {
+        val b = bounds
+        val w = b.width().toFloat()
+        val h = b.height().toFloat()
+        p.color = base
+        p.style = Paint.Style.FILL
+        c.drawRect(b, p)
+        val sc = maxOf(w / art.width, h / art.height)
+        val sw = art.width * sc
+        val sh = art.height * sc
+        dst.set(b.left.toFloat(), b.bottom - sh, b.left + sw, b.bottom.toFloat())
+        p.isFilterBitmap = true
+        c.drawBitmap(art, null, dst, p)
+    }
+
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun getOpacity(): Int = android.graphics.PixelFormat.OPAQUE
+}
+
+/** Optional per-theme art, dropped in res/drawable-nodpi as theme_<id>_scene / _branch / _bg (full screen) / _card (selected Custom tile). */
 object Art {
     private val cache = HashMap<String, Bitmap?>()
 
