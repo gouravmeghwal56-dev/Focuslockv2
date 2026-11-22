@@ -141,7 +141,7 @@ class MainActivity : Activity() {
         t.gravity = Gravity.CENTER
         t.textSize = 16f
         t.setTextColor(if (selected) Color.WHITE else C_TXT)
-        t.background = rounded(if (selected) C_PRIMARY else C_TILE, 20)
+        t.background = tileBg(selected)
         t.setOnClickListener { onClick() }
         t.setOnTouchListener { v, ev ->
             when (ev.action) {
@@ -153,10 +153,14 @@ class MainActivity : Activity() {
         return t
     }
 
+    private fun tileBg(sel: Boolean): android.graphics.drawable.Drawable =
+        if (sel) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, dp(20).toFloat())
+        else TileBg(C_TILE, C_TILE, C_HILL, dp(20).toFloat())
+
     private fun styleTile(t: TextView?, sel: Boolean) {
         if (t == null) return
         t.setTextColor(if (sel) Color.WHITE else C_TXT)
-        t.background = rounded(if (sel) C_PRIMARY else C_TILE, 20)
+        t.background = tileBg(sel)
     }
 
     private fun hrow(vararg v: View): LinearLayout {
@@ -688,8 +692,8 @@ class MainActivity : Activity() {
     private fun timeColor(min: Int): Int {
         // kam time = dark grey (#4D4846), 180 min pe poora orange (#F45516), beech me seedha blend
         val t = (min / 180f).coerceIn(0f, 1f)
-        val a = Color.parseColor("#4D4846")
-        val z = Color.parseColor("#F45516")
+        val a = C_CLK_A
+        val z = C_CLK_Z
         val r = (Color.red(a) + (Color.red(z) - Color.red(a)) * t).toInt()
         val g = (Color.green(a) + (Color.green(z) - Color.green(a)) * t).toInt()
         val b = (Color.blue(a) + (Color.blue(z) - Color.blue(a)) * t).toInt()
