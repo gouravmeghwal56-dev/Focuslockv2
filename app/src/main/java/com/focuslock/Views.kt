@@ -1490,7 +1490,7 @@ class CardBg(private val fill: Int, private val rPx: Float, private val art: Bit
 
 /** Full-screen background: base colour + theme art scaled to cover, anchored bottom-left. */
 /** Themes that get the glass-tile look + stronger tile hills. */
-val GLASS_THEMES = setOf("underwater", "desert", "cabin", "lake", "autumn", "japan", "rome", "ink", "rain")
+val GLASS_THEMES = setOf("underwater", "desert", "cabin", "lake", "autumn", "japan", "rome", "ink", "rain", "korea", "spring", "ocean", "santorini", "sakura")
 /** Themes whose Custom card is light, so its text stays dark. */
 val LIGHT_CARD_THEMES = setOf("japan", "rome")
 /** Per-theme scene panel fit: [top, right, bottom (fractions of the art), max height (fraction of screen)]. Rain draws its panel as-is. */
