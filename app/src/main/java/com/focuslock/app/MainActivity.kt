@@ -153,12 +153,13 @@ class MainActivity : Activity() {
         return t
     }
 
-    private fun tileBg(sel: Boolean, custom: Boolean = false, hours: Boolean = false): android.graphics.drawable.Drawable {
+    private fun tileBg(sel: Boolean, custom: Boolean = false, kind: String? = null): android.graphics.drawable.Drawable {
         val uw = C_THEME_ID in GLASS_THEMES
         val r = dp(if (uw) 28 else 20).toFloat()
         val cardArt = Art.get(this, "card")
-        val hoursArt = if (hours) Art.get(this, "hours") else null
-        if (hoursArt != null) return TileBg(C_TILE, C_TILE, 0, r, hoursArt, false, 0x01FFFFFF, if (sel) C_PRIMARY else 0)
+        // Per-tile art: t15 / t45 / hours, else a shared "tile" image if the theme has one.
+        val tileArt = if (kind != null) (Art.get(this, kind) ?: Art.get(this, "tile")) else null
+        if (tileArt != null) return TileBg(C_TILE, C_TILE, 0, r, tileArt, false, 0x01FFFFFF, if (sel) C_PRIMARY else 0)
         val cardVeil = if (C_THEME_ID in LIGHT_CARD_THEMES) 0x14FFFFFF else 0
         if (custom && cardArt != null) return TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, r, cardArt, false, cardVeil, if (sel) C_PRIMARY else 0)
         if (Art.get(this, "bg") != null) {
@@ -174,7 +175,7 @@ class MainActivity : Activity() {
         val artTheme = Art.get(this, "bg") != null
         val cardArt = t === tCustom && Art.get(this, "card") != null
         t.setTextColor(if (cardArt && C_THEME_ID in LIGHT_CARD_THEMES) C_TXT else if (cardArt || (sel && !artTheme)) Color.WHITE else C_TXT)
-        t.background = tileBg(sel, t === tCustom, t === t180)
+        t.background = tileBg(sel, t === tCustom, if (t === t15) "t15" else if (t === t45) "t45" else if (t === t180) "hours" else null)
     }
 
     private fun hrow(vararg v: View): LinearLayout {
