@@ -154,7 +154,7 @@ class MainActivity : Activity() {
     }
 
     private fun tileBg(sel: Boolean): android.graphics.drawable.Drawable =
-        if (sel) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, dp(20).toFloat())
+        if (sel) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, dp(20).toFloat(), Art.get(this, "card"))
         else TileBg(C_TILE, C_TILE, C_HILL, dp(20).toFloat())
 
     private fun styleTile(t: TextView?, sel: Boolean) {
@@ -238,7 +238,8 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
-        root.setBackgroundColor(C_BG)
+        val bgArt = Art.get(this, "bg")
+        if (bgArt != null) root.background = ArtBg(C_BG, bgArt) else root.setBackgroundColor(C_BG)
         root.setPadding(dp(14), dp(26), dp(14), dp(12))
 
         root.addView(buildHeader(), LinearLayout.LayoutParams(MATCH, dp(56)))
@@ -503,8 +504,12 @@ class MainActivity : Activity() {
         val card = LinearLayout(this)
         leftCard = card
         card.orientation = LinearLayout.VERTICAL
-        card.background = CardBg(C_CARD, dp(28).toFloat(), Art.get(this, "branch"))
-        card.clipToOutline = true
+        if (Art.get(this, "bg") != null) {
+            card.background = null
+        } else {
+            card.background = CardBg(C_CARD, dp(28).toFloat(), Art.get(this, "branch"))
+            card.clipToOutline = true
+        }
 
         val content = LinearLayout(this)
         content.orientation = LinearLayout.VERTICAL
@@ -601,7 +606,7 @@ class MainActivity : Activity() {
 
         scene = SceneView(this)
         card.addView(content, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        card.addView(scene, LinearLayout.LayoutParams(MATCH, if (Art.get(this, "scene") != null) dp(170) else dp(110)))
+        card.addView(scene, LinearLayout.LayoutParams(MATCH, if (Art.get(this, "scene") != null || Art.get(this, "bg") != null) dp(170) else dp(110)))
         return card
     }
 
@@ -727,7 +732,7 @@ class MainActivity : Activity() {
     private fun updateLeft() {
         pc.visibility = if (tab == 1 || tab == 4) View.GONE else View.VISIBLE
         detoxBox.visibility = if (tab == 4) View.VISIBLE else View.GONE
-        leftCard.background = rounded(if (tab == 4) C_DXLEFT else C_CARD, 28)
+        leftCard.background = if (tab != 4 && Art.get(this, "bg") != null) null else rounded(if (tab == 4) C_DXLEFT else C_CARD, 28)
         bagsView.visibility = if (tab == 1) View.VISIBLE else View.GONE
         dots.visibility = if (tab == 3) View.VISIBLE else View.GONE
         controls.visibility = if (tab == 0) View.VISIBLE else View.GONE
