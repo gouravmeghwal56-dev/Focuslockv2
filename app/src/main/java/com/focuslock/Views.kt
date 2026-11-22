@@ -819,7 +819,7 @@ class SlideView(ctx: Context, private val onDone: () -> Unit) : View(ctx) {
         val maxX = (w - kw).coerceAtLeast(1f)
 
         paint.style = Paint.Style.FILL
-        paint.color = C_TILE
+        paint.color = if (Art.get(context, "bg") != null) (C_TILE and 0x00FFFFFF) or (0xC8 shl 24) else C_TILE
         rect.set(0f, 0f, w, h)
         canvas.drawRoundRect(rect, r, r, paint)
 
