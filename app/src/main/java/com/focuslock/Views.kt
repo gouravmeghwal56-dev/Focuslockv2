@@ -661,26 +661,38 @@ class RulerView(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
         invalidate()
     }
 
-    /** Left-right wobble + reject haptic, used when the user tries to go past 1 min / 24 h. */
+    private var pinDx = 0f
+
+    /** Only the orange pin wobbles left-right, plus a real vibration, when the user hits 1 min / 24 h. */
     fun shake() {
         shakeAnim?.cancel()
         val amp = dens * 7f
         val a = ValueAnimator.ofFloat(0f, 1f)
-        a.duration = 280L
+        a.duration = 320L
         a.addUpdateListener {
             val t = it.animatedValue as Float
-            translationX = (Math.sin(t * Math.PI * 6.0) * (1f - t) * amp).toFloat()
+            pinDx = (Math.sin(t * Math.PI * 8.0) * (1f - t) * amp).toFloat()
+            invalidate()
         }
         a.addListener(object : android.animation.AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: android.animation.Animator) { translationX = 0f }
-            override fun onAnimationCancel(animation: android.animation.Animator) { translationX = 0f }
+            override fun onAnimationEnd(animation: android.animation.Animator) { pinDx = 0f; invalidate() }
+            override fun onAnimationCancel(animation: android.animation.Animator) { pinDx = 0f; invalidate() }
         })
         a.start()
         shakeAnim = a
-        performHapticFeedback(
-            if (android.os.Build.VERSION.SDK_INT >= 30) android.view.HapticFeedbackConstants.REJECT
-            else android.view.HapticFeedbackConstants.LONG_PRESS
-        )
+        try {
+            val vib = if (android.os.Build.VERSION.SDK_INT >= 31) {
+                (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as android.os.VibratorManager).defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+            }
+            if (vib.hasVibrator()) {
+                vib.vibrate(android.os.VibrationEffect.createWaveform(longArrayOf(0, 25, 35, 25, 35, 25), -1))
+            }
+        } catch (e: Exception) {
+            performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        }
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -710,7 +722,7 @@ class RulerView(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
         }
         paint.color = C_ORANGE
         paint.strokeWidth = dens * 4f
-        canvas.drawLine(w * 0.27f, cy, w * 0.73f, cy, paint)
+        canvas.drawLine(w * 0.27f + pinDx, cy, w * 0.73f + pinDx, cy, paint)
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
