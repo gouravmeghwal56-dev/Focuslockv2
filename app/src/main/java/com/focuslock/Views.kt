@@ -1,2132 +1,1319 @@
 package com.focuslock.app
 
-import android.accessibilityservice.AccessibilityServiceInfo
-import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
-import android.app.Activity
-import android.app.AlertDialog
-import android.app.TimePickerDialog
-import android.content.Intent
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.Typeface
-import android.graphics.drawable.Drawable
-import android.graphics.drawable.GradientDrawable
-import android.content.pm.PackageManager
-import android.os.Build
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.provider.Settings
-import android.text.Editable
-import android.text.InputType
-import android.text.Spannable
-import android.text.SpannableString
-import android.text.SpannableStringBuilder
-import android.text.TextWatcher
-import android.text.style.AbsoluteSizeSpan
-import android.text.style.ForegroundColorSpan
-import android.text.style.StyleSpan
-import android.view.Gravity
+import android.graphics.RectF
+import android.graphics.Shader
 import android.view.MotionEvent
-import android.view.View
-import android.view.ViewGroup
-import android.view.accessibility.AccessibilityManager
+import android.view.VelocityTracker
+import android.view.ViewConfiguration
 import android.view.animation.DecelerateInterpolator
-import android.widget.BaseAdapter
-import android.widget.Button
-import android.widget.ScrollView
-import android.widget.CheckBox
-import android.widget.EditText
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ListView
-import android.widget.TextView
-import android.widget.Toast
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
+import java.util.Random
+import android.view.View
 
-// ---------- Activity ----------
+val C_ORANGE = Color.parseColor("#FF6A0A")
+val C_GRAY = Color.parseColor("#B5AEAC")
+val C_TILE = Color.parseColor("#EBE6E6")
+val C_DARK = Color.parseColor("#403B39")
+val C_BG = Color.parseColor("#F6F3F3")
+val C_TXT = Color.parseColor("#2E2927")
+val C_CARD = Color.parseColor("#FCFAFA")
+val C_LINE = Color.parseColor("#C9C2C0")
 
-class MainActivity : Activity() {
+// ---------- Custom views ----------
 
-    private class App(val label: String, val pkg: String)
+/** Line/filled icons drawn on a 24x24 grid, so no drawable files are needed. */
+class IconView(ctx: Context, var kind: Int) : View(ctx) {
+    var tint: Int = C_DARK
+        set(v) {
+            field = v
+            invalidate()
+        }
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val path = Path()
+    private val rf = RectF()
 
-    private val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
-    private val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
-    private val ui = Handler(Looper.getMainLooper())
-    private val iconCache = HashMap<String, Drawable?>()
-    private var allApps: List<App> = emptyList()
-    private var tab = 0
-    private var durMin = 180
-    private var bagSel = 0
-    private var rtSel = 0
-    private var lastRunning = false
-    private var isWide = true
-    private lateinit var pillRow: LinearLayout
-    private var rtStatusTv: TextView? = null
-    private val rtTimeTvs = arrayOfNulls<TextView>(3)
-
-    // focus (black) screen
-    private var focus: FocusScreen? = null
-    private lateinit var normalRoot: View
-    private var origStatus = 0
-    private var origNav = 0
-    private var origUi = 0
-
-    // animations: ruler slide + clock colour
-    private var rulerAnim: ValueAnimator? = null
-    private var rulerShown = 180f
-    private var clockColor = C_ORANGE
-    private var clockTarget = C_ORANGE
-    private var clockAnim: ValueAnimator? = null
-
-    private lateinit var host: FrameLayout
-    private lateinit var pc: PixelClockView
-    private lateinit var dots: DotsView
-    private lateinit var bagsView: BagsView
-    private lateinit var detoxView: DetoxArtView
-    private lateinit var detoxBox: LinearLayout
-    private lateinit var leftCard: LinearLayout
-    private lateinit var scene: SceneView
-    private lateinit var caption: TextView
-    private lateinit var pillText: TextView
-    private lateinit var pillIcon: IconView
-    private lateinit var controls: LinearLayout
-    private val railBtns = ArrayList<IconView>()
-    private val tabKinds = intArrayOf(IconView.TIMER, IconView.BAG, IconView.GRID, IconView.BARS, IconView.DETOX)
-    private val tabNames = arrayOf("Focus Session", "Bags", "Routines", "Stats", "Detox")
-
-    // timer page refs (so tiles can update without rebuilding the page while dragging)
-    private var t15: TextView? = null
-    private var t45: TextView? = null
-    private var t180: TextView? = null
-    private var tCustom: TextView? = null
-    private var ruler: RulerView? = null
-
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-    private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_LONG).show()
-    private fun fmt(min: Int) = String.format("%02d:%02d", min / 60, min % 60)
-    private fun locked() = Store.active(this) && Store.strict(this)
-    private fun lockedToast() = toast("Strict mode is ON, can't change right now")
-
-    private fun rounded(color: Int, r: Int): GradientDrawable {
-        val g = GradientDrawable()
-        g.setColor(color)
-        g.cornerRadius = dp(r).toFloat()
-        return g
+    companion object {
+        const val TIMER = 0
+        const val BAG = 1
+        const val GRID = 2
+        const val BARS = 3
+        const val MENU = 4
+        const val GEAR = 5
+        const val LOCK = 6
+        const val PLAY = 7
+        const val STOP = 8
+        const val RESET = 9
+        const val UP = 10
+        const val DOWN = 11
+        const val DETOX = 12
+        const val PAUSE = 13
+        const val INFINITY = 14
+        const val INFO = 15
+        const val PLUS = 16
+        const val CHEVRON = 17
     }
 
-    private fun oval(color: Int): GradientDrawable {
-        val g = GradientDrawable()
-        g.shape = GradientDrawable.OVAL
-        g.setColor(color)
-        return g
-    }
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val aw = (width - paddingLeft - paddingRight).toFloat()
+        val ah = (height - paddingTop - paddingBottom).toFloat()
+        val s = minOf(aw, ah)
+        val u = s / 24f
+        val ox = paddingLeft + (aw - s) / 2f
+        val oy = paddingTop + (ah - s) / 2f
+        p.color = tint
+        p.strokeWidth = 2f * u
+        p.strokeCap = Paint.Cap.ROUND
+        p.strokeJoin = Paint.Join.ROUND
+        p.style = Paint.Style.STROKE
 
-    private fun twoLine(top: String, bottom: String): CharSequence {
-        val sb = SpannableStringBuilder()
-        sb.append(top)
-        sb.setSpan(AbsoluteSizeSpan(34, true), 0, top.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        sb.setSpan(StyleSpan(Typeface.BOLD), 0, top.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        sb.append("\n")
-        sb.append(bottom)
-        return sb
-    }
+        fun x(v: Float) = ox + v * u
+        fun y(v: Float) = oy + v * u
+        fun rr(l: Float, t: Float, r: Float, b: Float, rad: Float) {
+            rf.set(x(l), y(t), x(r), y(b))
+            canvas.drawRoundRect(rf, rad * u, rad * u, p)
+        }
 
-    private fun tile(text: CharSequence, selected: Boolean, onClick: () -> Unit): TextView {
-        val t = TextView(this)
-        t.text = text
-        t.gravity = Gravity.CENTER
-        t.textSize = 16f
-        t.setTextColor(if (selected) Color.WHITE else C_TXT)
-        t.background = rounded(if (selected) C_DARK else C_TILE, 20)
-        t.setOnClickListener { onClick() }
-        t.setOnTouchListener { v, ev ->
-            when (ev.action) {
-                MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(90).start()
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
+        when (kind) {
+            TIMER -> {
+                canvas.drawCircle(x(12f), y(13.5f), 8f * u, p)
+                canvas.drawLine(x(12f), y(13.5f), x(12f), y(9.5f), p)
+                canvas.drawLine(x(9.5f), y(2.5f), x(14.5f), y(2.5f), p)
             }
-            false
-        }
-        return t
-    }
-
-    private fun styleTile(t: TextView?, sel: Boolean) {
-        if (t == null) return
-        t.setTextColor(if (sel) Color.WHITE else C_TXT)
-        t.background = rounded(if (sel) C_DARK else C_TILE, 20)
-    }
-
-    private fun hrow(vararg v: View): LinearLayout {
-        val r = LinearLayout(this)
-        r.orientation = LinearLayout.HORIZONTAL
-        for (x in v) {
-            val lp = LinearLayout.LayoutParams(0, MATCH, 1f)
-            lp.setMargins(dp(4), 0, dp(4), 0)
-            r.addView(x, lp)
-        }
-        return r
-    }
-
-    private fun vbox(): LinearLayout {
-        val c = LinearLayout(this)
-        c.orientation = LinearLayout.VERTICAL
-        c.setPadding(dp(2), dp(2), dp(2), dp(2))
-        return c
-    }
-
-    private fun lpV(h: Int = 0): LinearLayout.LayoutParams {
-        val lp = if (h == 0) LinearLayout.LayoutParams(MATCH, 0, 1f) else LinearLayout.LayoutParams(MATCH, h)
-        lp.setMargins(0, dp(5), 0, dp(5))
-        return lp
-    }
-
-    /** App abhi phone mein installed hai? (cache nahi, har baar fresh check) */
-    private fun installed(pkg: String): Boolean =
-        try { packageManager.getApplicationInfo(pkg, 0); true } catch (e: Exception) { false }
-
-    private fun icon(pkg: String): Drawable? =
-        iconCache.getOrPut(pkg) {
-            try { packageManager.getApplicationIcon(pkg) } catch (e: Exception) { null }
-        }
-
-    private fun accEnabled(): Boolean {
-        val am = getSystemService(AccessibilityManager::class.java)
-        return am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-            .any { it.resolveInfo.serviceInfo.packageName == packageName }
-    }
-
-    private fun loadApps() {
-        val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        allApps = packageManager.queryIntentActivities(i, 0)
-            .filter { it.activityInfo.packageName != packageName }
-            .map { App(it.loadLabel(packageManager).toString(), it.activityInfo.packageName) }
-            .distinctBy { it.pkg }
-            .sortedBy { it.label.lowercase() }
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        loadApps()
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 7)
-        }
-        bagSel = Store.activeBag(this)
-        val wide = resources.displayMetrics.widthPixels > resources.displayMetrics.heightPixels
-        isWide = wide
-
-        val root = LinearLayout(this)
-        root.orientation = LinearLayout.VERTICAL
-        root.setBackgroundColor(C_BG)
-        root.setPadding(dp(14), dp(26), dp(14), dp(12))
-
-        root.addView(buildHeader(), LinearLayout.LayoutParams(MATCH, dp(56)))
-
-        val body = LinearLayout(this)
-        body.orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-
-        val left = buildLeft()
-        host = FrameLayout(this)
-        host.clipChildren = true
-        host.clipToPadding = true
-        val rail = buildRail(wide)
-
-        fun lp(w: Int, h: Int, wt: Float): LinearLayout.LayoutParams {
-            val l = LinearLayout.LayoutParams(w, h, wt)
-            l.setMargins(dp(6), dp(6), dp(6), dp(6))
-            return l
-        }
-        if (wide) {
-            body.addView(left, lp(0, MATCH, 1f))
-            body.addView(host, lp(0, MATCH, 1.05f))
-            body.addView(rail, lp(WRAP, WRAP, 0f).also { it.gravity = Gravity.CENTER_VERTICAL })
-        } else {
-            body.addView(left, lp(MATCH, 0, 1f))
-            body.addView(host, lp(MATCH, 0, 1.3f))
-            body.addView(rail, lp(MATCH, dp(68), 0f))
-        }
-        root.addView(body, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        normalRoot = root
-        origStatus = window.statusBarColor
-        origNav = window.navigationBarColor
-        origUi = window.decorView.systemUiVisibility
-        setContentView(root)
-    }
-
-    private fun circleBtn(kind: Int, onClick: () -> Unit): IconView {
-        val v = IconView(this, kind)
-        v.setPadding(dp(12), dp(12), dp(12), dp(12))
-        v.background = oval(C_CARD)
-        v.setOnClickListener { onClick() }
-        return v
-    }
-
-    private fun showSettings() {
-        AlertDialog.Builder(this)
-            .setTitle("Settings")
-            .setItems(arrayOf("Profile", "Theme", "Accessibility settings")) { _, i ->
-                when (i) {
-                    0 -> showProfile()
-                    1 -> toast("Theme: coming soon")
-                    else -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            BAG -> {
+                p.style = Paint.Style.FILL
+                rr(4f, 9f, 8.5f, 20f, 1f)
+                rr(9.5f, 4f, 14.5f, 20f, 1f)
+                rr(15.5f, 9f, 20f, 20f, 1f)
+            }
+            GRID -> {
+                p.style = Paint.Style.FILL
+                rr(3f, 3f, 11f, 11f, 2f)
+                rr(13f, 3f, 21f, 11f, 2f)
+                rr(3f, 13f, 11f, 21f, 2f)
+                rr(13f, 13f, 21f, 21f, 2f)
+            }
+            BARS -> {
+                p.style = Paint.Style.FILL
+                rr(4f, 13f, 8f, 20f, 1.2f)
+                rr(10f, 8.5f, 14f, 20f, 1.2f)
+                rr(16f, 4f, 20f, 20f, 1.2f)
+            }
+            MENU -> {
+                p.strokeWidth = 1.9f * u
+                rr(3.5f, 3.5f, 10f, 10f, 2.5f)
+                rr(14f, 3.5f, 20.5f, 10f, 2.5f)
+                rr(3.5f, 14f, 10f, 20.5f, 2.5f)
+                rr(14f, 14f, 20.5f, 20.5f, 2.5f)
+            }
+            GEAR -> {
+                canvas.drawCircle(x(12f), y(12f), 6.3f * u, p)
+                for (i in 0 until 8) {
+                    val a = Math.toRadians(i * 45.0)
+                    val c = Math.cos(a).toFloat()
+                    val sn = Math.sin(a).toFloat()
+                    canvas.drawLine(
+                        x(12f + 8.3f * c), y(12f + 8.3f * sn),
+                        x(12f + 10.5f * c), y(12f + 10.5f * sn), p
+                    )
                 }
+                canvas.drawCircle(x(12f), y(12f), 2.4f * u, p)
             }
-            .show()
-    }
-
-    private fun showProfile() {
-        val et = EditText(this)
-        et.hint = "Your name"
-        et.setText(Store.profileName(this))
-        et.isSingleLine = true
-        val box = FrameLayout(this)
-        box.setPadding(dp(20), dp(8), dp(20), 0)
-        box.addView(et, FrameLayout.LayoutParams(MATCH, WRAP))
-        AlertDialog.Builder(this)
-            .setTitle("Profile")
-            .setView(box)
-            .setPositiveButton("Save") { _, _ -> Store.setProfileName(this, et.text.toString()) }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun buildHeader(): FrameLayout {
-        val f = FrameLayout(this)
-        val menu = circleBtn(IconView.MENU) { toast("Coming soon") }
-        val gear = circleBtn(IconView.GEAR) { showSettings() }
-        f.addView(menu, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.START or Gravity.CENTER_VERTICAL))
-        f.addView(gear, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END or Gravity.CENTER_VERTICAL))
-
-        val logo = LinearLayout(this)
-        logo.orientation = LinearLayout.HORIZONTAL
-        logo.gravity = Gravity.CENTER
-        val lk = IconView(this, IconView.LOCK)
-        lk.tint = C_ORANGE
-        logo.addView(lk, LinearLayout.LayoutParams(dp(30), dp(34)))
-        val tv = TextView(this)
-        val sp = SpannableString("FocusLock")
-        sp.setSpan(ForegroundColorSpan(C_ORANGE), 5, 9, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        tv.text = sp
-        tv.textSize = 26f
-        tv.setTextColor(C_TXT)
-        tv.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        tv.setPadding(dp(8), 0, 0, 0)
-        logo.addView(tv, LinearLayout.LayoutParams(WRAP, WRAP))
-        f.addView(logo, FrameLayout.LayoutParams(WRAP, MATCH, Gravity.CENTER))
-        return f
-    }
-
-    private fun buildLeft(): LinearLayout {
-        val card = LinearLayout(this)
-        leftCard = card
-        card.orientation = LinearLayout.VERTICAL
-        card.background = rounded(C_CARD, 28)
-        card.clipToOutline = true
-
-        val content = LinearLayout(this)
-        content.orientation = LinearLayout.VERTICAL
-        content.setPadding(dp(16), dp(16), dp(16), dp(10))
-
-        // pill
-        pillRow = LinearLayout(this)
-        pillRow.orientation = LinearLayout.HORIZONTAL
-        pillRow.gravity = Gravity.CENTER_VERTICAL
-        pillRow.background = rounded(C_TILE, 24)
-        pillRow.setPadding(dp(16), dp(8), dp(20), dp(8))
-        pillIcon = IconView(this, IconView.TIMER)
-        pillText = TextView(this)
-        pillText.textSize = 15f
-        pillText.setTextColor(C_TXT)
-        pillText.setPadding(dp(10), 0, 0, 0)
-        pillRow.addView(pillIcon, LinearLayout.LayoutParams(dp(22), dp(22)))
-        pillRow.addView(pillText, LinearLayout.LayoutParams(WRAP, WRAP))
-        val pl = LinearLayout.LayoutParams(WRAP, WRAP)
-        pl.gravity = Gravity.CENTER_HORIZONTAL
-        content.addView(pillRow, pl)
-
-        pc = PixelClockView(this)
-        bagsView = BagsView(this)
-        detoxView = DetoxArtView(this)
-        detoxBox = LinearLayout(this)
-        detoxBox.orientation = LinearLayout.VERTICAL
-        detoxBox.addView(detoxView, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        detoxBox.addView(QuoteView(this), LinearLayout.LayoutParams(MATCH, dp(120)))
-        dots = DotsView(this)
-        caption = TextView(this)
-        caption.gravity = Gravity.CENTER
-        caption.textSize = 13f
-        caption.letterSpacing = 0.1f
-        caption.setTextColor(C_TXT)
-
-        // controls: reset / play / stop
-        controls = LinearLayout(this)
-        controls.orientation = LinearLayout.HORIZONTAL
-        controls.gravity = Gravity.CENTER
-
-        val reset = IconView(this, IconView.RESET)
-        reset.setPadding(dp(14), dp(14), dp(14), dp(14))
-        reset.background = oval(C_TILE)
-        reset.setOnClickListener {
-            if (Store.active(this)) {
-                toast("Can't change while a session is running")
-            } else {
-                durMin = 180
-                refreshDur(false)
-                updateLeft()
+            LOCK -> {
+                p.strokeWidth = 2.6f * u
+                path.reset()
+                path.moveTo(x(7.5f), y(11f))
+                path.lineTo(x(7.5f), y(8f))
+                rf.set(x(7.5f), y(2.5f), x(16.5f), y(13.5f))
+                path.arcTo(rf, 180f, 180f)
+                path.lineTo(x(16.5f), y(11f))
+                canvas.drawPath(path, p)
+                p.style = Paint.Style.FILL
+                rr(4f, 10.5f, 20f, 22f, 3.5f)
+                p.color = Color.WHITE
+                canvas.drawCircle(x(12f), y(15.3f), 1.7f * u, p)
+                rr(11.2f, 15.5f, 12.8f, 19f, 0.8f)
+            }
+            PLAY -> {
+                p.style = Paint.Style.FILL_AND_STROKE
+                p.strokeWidth = 1.8f * u
+                path.reset()
+                path.moveTo(x(9f), y(6f))
+                path.lineTo(x(9f), y(18f))
+                path.lineTo(x(18f), y(12f))
+                path.close()
+                canvas.drawPath(path, p)
+            }
+            STOP -> {
+                p.style = Paint.Style.FILL
+                rr(6.5f, 6.5f, 17.5f, 17.5f, 2.5f)
+            }
+            RESET -> {
+                rf.set(x(4f), y(4f), x(20f), y(20f))
+                canvas.drawArc(rf, -40f, 290f, false, p)
+                p.style = Paint.Style.FILL
+                path.reset()
+                path.moveTo(x(8.6f), y(1.2f))
+                path.lineTo(x(8.6f), y(7.8f))
+                path.lineTo(x(13.6f), y(4.5f))
+                path.close()
+                canvas.drawPath(path, p)
+            }
+            UP -> {
+                p.strokeWidth = 2.2f * u
+                path.reset()
+                path.moveTo(x(6f), y(15f))
+                path.lineTo(x(12f), y(9f))
+                path.lineTo(x(18f), y(15f))
+                canvas.drawPath(path, p)
+            }
+            INFINITY -> {
+                p.strokeWidth = 2.6f * u
+                path.reset()
+                path.moveTo(x(12f), y(12f))
+                path.cubicTo(x(9f), y(6.5f), x(3f), y(6.5f), x(3f), y(12f))
+                path.cubicTo(x(3f), y(17.5f), x(9f), y(17.5f), x(12f), y(12f))
+                path.cubicTo(x(15f), y(6.5f), x(21f), y(6.5f), x(21f), y(12f))
+                path.cubicTo(x(21f), y(17.5f), x(15f), y(17.5f), x(12f), y(12f))
+                canvas.drawPath(path, p)
+            }
+            INFO -> {
+                canvas.drawCircle(x(12f), y(12f), 9.5f * u, p)
+                canvas.drawLine(x(12f), y(11f), x(12f), y(17f), p)
+                p.style = Paint.Style.FILL
+                canvas.drawCircle(x(12f), y(7.6f), 1.3f * u, p)
+            }
+            PLUS -> {
+                p.strokeWidth = 2.8f * u
+                canvas.drawLine(x(12f), y(5f), x(12f), y(19f), p)
+                canvas.drawLine(x(5f), y(12f), x(19f), y(12f), p)
+            }
+            CHEVRON -> {
+                p.strokeWidth = 2.4f * u
+                path.reset()
+                path.moveTo(x(9f), y(5f))
+                path.lineTo(x(16f), y(12f))
+                path.lineTo(x(9f), y(19f))
+                canvas.drawPath(path, p)
+            }
+            PAUSE -> {
+                p.style = Paint.Style.FILL
+                rr(6.5f, 5f, 10.5f, 19f, 1.2f)
+                rr(13.5f, 5f, 17.5f, 19f, 1.2f)
+            }
+            DETOX -> {
+                canvas.drawCircle(x(12f), y(12f), 8.5f * u, p)
+                canvas.drawLine(x(6f), y(18f), x(18f), y(6f), p)
+            }
+            DOWN -> {
+                p.strokeWidth = 2.2f * u
+                path.reset()
+                path.moveTo(x(6f), y(9f))
+                path.lineTo(x(12f), y(15f))
+                path.lineTo(x(18f), y(9f))
+                canvas.drawPath(path, p)
             }
         }
-        val play = IconView(this, IconView.PLAY)
-        play.tint = Color.WHITE
-        play.setPadding(dp(30), dp(14), dp(30), dp(14))
-        play.background = rounded(C_DARK, 28)
-        play.setOnClickListener {
-            if (Store.active(this)) toast("A session is already running") else startFocus()
-        }
-        val stop = IconView(this, IconView.STOP)
-        stop.setPadding(dp(14), dp(14), dp(14), dp(14))
-        stop.background = oval(C_TILE)
-        stop.setOnClickListener {
-            if (!Store.active(this)) {
-                toast("No session is running")
-            } else if (Store.strict(this)) {
-                toast("Strict mode is ON, can't end early")
-            } else if (Store.sessionOn(this)) {
-                Store.stopSession(this)
-                render()
-                updateLeft()
-            } else {
-                toast("Routine is running, turn it off from the Routines tab")
-            }
-        }
-        fun cl(w: Int): LinearLayout.LayoutParams {
-            val l = LinearLayout.LayoutParams(w, dp(56))
-            l.setMargins(dp(10), 0, dp(10), 0)
-            return l
-        }
-        controls.addView(reset, cl(dp(56)))
-        controls.addView(play, cl(dp(112)))
-        controls.addView(stop, cl(dp(56)))
+    }
+}
 
-        content.addView(pc, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        content.addView(bagsView, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        content.addView(detoxBox, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        content.addView(controls, LinearLayout.LayoutParams(MATCH, WRAP))
-        content.addView(dots, LinearLayout.LayoutParams(MATCH, dp(30)))
-        val capLp = LinearLayout.LayoutParams(MATCH, WRAP)
-        capLp.topMargin = dp(10)
-        content.addView(caption, capLp)
 
-        scene = SceneView(this)
-        card.addView(content, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        card.addView(scene, LinearLayout.LayoutParams(MATCH, dp(110)))
-        return card
+/**
+ * Base view: content is drawn into an offscreen bitmap. assemble() then rebuilds it on screen
+ * from scattered pixel blocks (blockit style), so bags AND digits "build" themselves.
+ */
+abstract class AssembleView(ctx: Context) : View(ctx) {
+    private var buf: Bitmap? = null
+    private var bufCanvas: Canvas? = null
+    private var dirty = true
+    private var prog = 1f
+    private var anim: ValueAnimator? = null
+    private val cell = (ctx.resources.displayMetrics.density * 6f).toInt().coerceAtLeast(4)
+    private var cols = 0
+    private var rows = 0
+    private var thr = FloatArray(0)
+    private var offX = FloatArray(0)
+    private var offY = FloatArray(0)
+    private val src = Rect()
+    private val dst = RectF()
+    private val bp = Paint()
+
+    protected abstract fun drawContent(c: Canvas)
+
+    override fun invalidate() {
+        dirty = true
+        super.invalidate()
     }
 
-    private fun buildRail(wide: Boolean): LinearLayout {
-        val r = LinearLayout(this)
-        r.orientation = if (wide) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
-        r.gravity = Gravity.CENTER
-        r.background = rounded(Color.parseColor("#FFFFFF"), 32)
-        r.setPadding(dp(4), dp(4), dp(4), dp(4))
-        railBtns.clear()
-        for (i in 0..4) {
-            val t = IconView(this, tabKinds[i])
-            t.setPadding(dp(15), dp(15), dp(15), dp(15))
-            t.setOnClickListener {
-                if (tab != i) {
-                    val dir = if (i > tab) 1 else -1
-                    tab = i
-                    render(true, dir)
-                    updateLeft()
-                    leftAssemble()
-                    styleRail()
-                }
-            }
-            railBtns.add(t)
-            val lp = if (wide) LinearLayout.LayoutParams(dp(58), dp(58)) else LinearLayout.LayoutParams(0, dp(52), 1f)
-            lp.setMargins(dp(4), dp(4), dp(4), dp(4))
-            r.addView(t, lp)
-        }
-        styleRail()
-        return r
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        super.onSizeChanged(w, h, ow, oh)
+        buf?.recycle()
+        buf = null
+        bufCanvas = null
+        dirty = true
+        cols = (w + cell - 1) / cell
+        rows = (h + cell - 1) / cell
+        val n = cols * rows
+        val r = Random(7)
+        thr = FloatArray(n) { r.nextFloat() * 0.62f }
+        offX = FloatArray(n) { (r.nextFloat() - 0.5f) * 2f }
+        offY = FloatArray(n) { (r.nextFloat() - 0.5f) * 2f }
     }
 
-    private fun styleRail() {
-        for (i in railBtns.indices) {
-            railBtns[i].background = if (i == tab) rounded(C_DARK, 26) else null
-            railBtns[i].tint = if (i == tab) Color.WHITE else C_DARK
-        }
-    }
-
-    private fun render(animate: Boolean = false, dir: Int = 1) {
-        // finish/cancel any running slide so stale pages are removed
-        val kids = ArrayList<View>()
-        for (i in 0 until host.childCount) kids.add(host.getChildAt(i))
-        for (k in kids) k.animate().cancel()
-        val old = if (host.childCount > 0) host.getChildAt(host.childCount - 1) else null
-
-        val page = when (tab) {
-            0 -> timerPage()
-            1 -> bagsPage()
-            2 -> routinesPage()
-            3 -> statsPage()
-            else -> detoxPage()
-        }
-        if (!animate || old == null || host.width == 0 || host.height == 0) {
-            host.removeAllViews()
-            host.addView(page, FrameLayout.LayoutParams(MATCH, MATCH))
-            return
-        }
-        while (host.childCount > 1) host.removeViewAt(0)
-        host.addView(page, FrameLayout.LayoutParams(MATCH, MATCH))
-        val dist = (if (isWide) host.height else host.width).toFloat()
-        val d = dir.toFloat()
-        val dur = 380L
-        val ip = DecelerateInterpolator(1.6f)
-        if (isWide) {
-            page.translationY = d * dist
-            page.animate().translationY(0f).setDuration(dur).setInterpolator(ip).start()
-            old.animate().translationY(-d * dist).setDuration(dur).setInterpolator(ip)
-                .withEndAction { host.removeView(old) }.start()
-        } else {
-            page.translationX = d * dist
-            page.animate().translationX(0f).setDuration(dur).setInterpolator(ip).start()
-            old.animate().translationX(-d * dist).setDuration(dur).setInterpolator(ip)
-                .withEndAction { host.removeView(old) }.start()
-        }
-    }
-
-    /** Left panel: bags / digits rebuild themselves from scattered pixel blocks. */
-    private fun leftAssemble() {
-        when (tab) {
-            1 -> bagsView.assemble()
-            4 -> detoxView.assemble()
-            else -> pc.assemble()
-        }
-    }
-
-    // ---------- Clock colour ----------
-    private fun timeColor(min: Int): Int {
-        // kam time = dark grey (#4D4846), 180 min pe poora orange (#F45516), beech me seedha blend
-        val t = (min / 180f).coerceIn(0f, 1f)
-        val a = Color.parseColor("#4D4846")
-        val z = Color.parseColor("#F45516")
-        val r = (Color.red(a) + (Color.red(z) - Color.red(a)) * t).toInt()
-        val g = (Color.green(a) + (Color.green(z) - Color.green(a)) * t).toInt()
-        val b = (Color.blue(a) + (Color.blue(z) - Color.blue(a)) * t).toInt()
-        return Color.rgb(r, g, b)
-    }
-
-    private fun clockColorTo(target: Int) {
-        if (target == clockTarget) return
-        clockTarget = target
-        clockAnim?.cancel()
-        val a = ValueAnimator.ofObject(ArgbEvaluator(), clockColor, target)
-        a.duration = 260L
+    fun assemble(duration: Long = 750L) {
+        anim?.cancel()
+        prog = 0f
+        val a = ValueAnimator.ofFloat(0f, 1f)
+        a.duration = duration
         a.addUpdateListener {
-            clockColor = it.animatedValue as Int
-            if (tab == 0 && focus == null && !Store.active(this)) pc.show(durMin, clockColor)
+            prog = it.animatedValue as Float
+            super.invalidate()
         }
         a.start()
-        clockAnim = a
+        anim = a
+        super.invalidate()
     }
 
-    // ---------- Left panel ----------
-    private fun monthTotal(): Int {
-        val cal = Calendar.getInstance()
-        val y = cal.get(Calendar.YEAR)
-        val m = cal.get(Calendar.MONTH)
-        var sum = 0L
-        for (d in 1..cal.getActualMaximum(Calendar.DAY_OF_MONTH)) sum += Store.dayMinutes(this, y, m, d)
-        return sum.toInt()
+    override fun onDetachedFromWindow() {
+        anim?.cancel()
+        super.onDetachedFromWindow()
     }
 
-    private fun updateLeft() {
-        pc.visibility = if (tab == 1 || tab == 4) View.GONE else View.VISIBLE
-        detoxBox.visibility = if (tab == 4) View.VISIBLE else View.GONE
-        leftCard.background = rounded(if (tab == 4) C_DXLEFT else C_CARD, 28)
-        bagsView.visibility = if (tab == 1) View.VISIBLE else View.GONE
-        dots.visibility = if (tab == 3) View.VISIBLE else View.GONE
-        controls.visibility = if (tab == 0) View.VISIBLE else View.GONE
-        scene.visibility = if (tab == 0) View.VISIBLE else View.GONE
-        caption.visibility = if (tab == 3) View.VISIBLE else View.GONE
-        pillRow.visibility = if (tab == 1 || tab == 2 || tab == 4) View.GONE else View.VISIBLE
-        pillIcon.kind = tabKinds[tab]
-        pillIcon.invalidate()
-        pillText.text = tabNames[tab]
-
-        when (tab) {
-            0 -> {
-                if (Store.sessionOn(this)) {
-                    val remMs = Store.until(this) - System.currentTimeMillis()
-                    val remMin = ((remMs + 59_999L) / 60_000L).toInt()
-                    pc.show(remMin, C_ORANGE)
-                    val total = Store.sessionMinutes(this) * 60_000L
-                    val frac = if (total > 0L) 1f - remMs.toFloat() / total.toFloat() else 0f
-                    scene.progress = frac
-                    pillText.text = "Focus Running"
-                } else if (Store.inSchedule(this)) {
-                    pc.show(0, C_ORANGE)
-                    scene.progress = 0.5f
-                    pillText.text = "Routine Active"
-                } else {
-                    clockColorTo(timeColor(durMin))
-                    pc.show(durMin, clockColor)
-                    scene.progress = 0.3f
-                }
-            }
-            1 -> {
-                bagsView.active = bagSel
-            }
-            2 -> {
-                val on = Store.rtOn(this, rtSel)
-                pc.showPair(
-                    Store.rtStart(this, rtSel), Store.rtEnd(this, rtSel),
-                    if (on) C_ORANGE else C_GRAY,
-                    if (on) C_ORANGE else Color.parseColor("#F2B89C")
-                )
-            }
-            4 -> {
-            }
-            else -> updateStatsLeft()
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        if (width <= 0 || height <= 0) return
+        var b = buf
+        if (b == null) {
+            b = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            buf = b
+            bufCanvas = Canvas(b)
+            dirty = true
         }
-    }
-
-    // ---------- Page 0: Timer ----------
-    private fun refreshDur(fromRuler: Boolean) {
-        styleTile(t15, durMin == 15)
-        styleTile(t45, durMin == 45)
-        styleTile(t180, durMin == 180)
-        val preset = durMin == 15 || durMin == 45 || durMin == 180
-        tCustom?.text = twoLine(fmt(durMin), "Custom")
-        styleTile(tCustom, !preset)
-        if (!fromRuler) animateRuler(durMin)
-    }
-
-    private fun animateRuler(target: Int) {
-        val rl = ruler ?: return
-        rulerAnim?.cancel()
-        val from = rulerShown
-        val to = target.toFloat().coerceAtLeast(1f)
-        if (Math.abs(to - from) < 0.5f) {
-            rulerShown = to
-            rl.setMinutes(target)
+        if (dirty) {
+            b.eraseColor(Color.TRANSPARENT)
+            drawContent(bufCanvas!!)
+            dirty = false
+        }
+        if (prog >= 1f) {
+            canvas.drawBitmap(b, 0f, 0f, null)
             return
         }
-        val a = ValueAnimator.ofFloat(from, to)
-        a.duration = 380L
-        a.interpolator = DecelerateInterpolator()
+        val k = 0.38f
+        for (cy in 0 until rows) {
+            for (cx in 0 until cols) {
+                val i = cy * cols + cx
+                val local = ((prog - thr[i]) / k).coerceIn(0f, 1f)
+                if (local <= 0f) continue
+                val l = cx * cell
+                val t = cy * cell
+                val r = minOf(l + cell, width)
+                val bt = minOf(t + cell, height)
+                src.set(l, t, r, bt)
+                val half = (r - l) / 2f * local
+                val halfH = (bt - t) / 2f * local
+                val sh = (1f - local) * cell * 2.2f
+                val mx = (l + r) / 2f + offX[i] * sh
+                val my = (t + bt) / 2f + offY[i] * sh
+                dst.set(mx - half, my - halfH, mx + half, my + halfH)
+                canvas.drawBitmap(b, src, dst, bp)
+            }
+        }
+    }
+}
+
+class PixelClockView(ctx: Context) : AssembleView(ctx) {
+    private var text = "0000"
+    private var color = C_ORANGE
+    private var pair = false
+    private var pairText = "00:00 00:00"
+    private var slots: BooleanArray? = null
+    private var slotColor = C_ORANGE
+    private val font = arrayOf(
+        "11111,10001,10001,10001,10001,10001,11111",
+        "00100,01100,00100,00100,00100,00100,01110",
+        "11111,00001,00001,11111,10000,10000,11111",
+        "11111,00001,00001,01111,00001,00001,11111",
+        "10001,10001,10001,11111,00001,00001,00001",
+        "11111,10000,10000,11111,00001,00001,11111",
+        "11111,10000,10000,11111,10001,10001,11111",
+        "11111,00001,00001,00010,00100,00100,00100",
+        "11111,10001,10001,11111,10001,10001,11111",
+        "11111,10001,10001,11111,00001,00001,11111"
+    ).map { it.split(",") }
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rect = RectF()
+    private val masks = arrayOf("abcdef", "bc", "abdeg", "abcdg", "bcfg", "acdfg", "acdefg", "abc", "abcdefg", "abcdfg")
+
+    /** Vertical nudge (px) for the digits; used to line them up with a neighbouring tile. */
+    var dyShift = 0f
+        set(v) {
+            if (field != v) {
+                field = v
+                invalidate()
+            }
+        }
+
+    /** Dim mode: faint block seams cut through the digits (blockit look). */
+    var seams = false
+        set(v) {
+            if (field != v) {
+                field = v
+                invalidate()
+            }
+        }
+    private val seamPaint = Paint().apply {
+        xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+        strokeWidth = 2f
+    }
+
+    private fun seamLines(c: Canvas, x: Float, y: Float, dw: Float, dh: Float) {
+        for (k in 1..2) c.drawLine(x + k * dw / 3f, y, x + k * dw / 3f, y + dh, seamPaint)
+        for (k in 1..4) c.drawLine(x, y + k * dh / 5f, x + dw, y + k * dh / 5f, seamPaint)
+    }
+
+    fun show(totalMin: Int, c: Int) {
+        val h = (totalMin / 60).coerceIn(0, 99)
+        val m = totalMin % 60
+        text = String.format("%02d%02d", h, m)
+        color = c
+        pair = false
+        invalidate()
+    }
+
+    /** Routine style: "23:55  05:30" in pixel font + 48 half-hour timeline squares under it. */
+    fun showPair(startMin: Int, endMin: Int, c: Int, slotC: Int) {
+        pairText = String.format("%02d:%02d %02d:%02d", startMin / 60, startMin % 60, endMin / 60, endMin % 60)
+        color = c
+        slotColor = slotC
+        fun inR(m: Int) = if (startMin < endMin) m in startMin until endMin else (m >= startMin || m < endMin)
+        slots = BooleanArray(48) { i ->
+            val a = i * 30
+            startMin != endMin && (inR(a) || inR(a + 29) || startMin in a..(a + 29))
+        }
+        pair = true
+        invalidate()
+    }
+
+    private fun drawPair(canvas: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        // columns: digit=5, gap=1, colon=1, group gap=3
+        val cols = 54
+        val px = (w * 0.94f) / cols
+        val x0 = (w - px * cols) / 2f
+        val dh = px * 7f
+        val barH = px * 0.9f * 1.0f
+        val totalH = dh + px * 3.5f + barH
+        val y0 = (h - totalH) / 2f
+        paint.color = color
+        var cx = 0
+        for (ch in pairText) {
+            when {
+                ch == ' ' -> cx += 2
+                ch == ':' -> {
+                    canvas.drawRect(x0 + cx * px, y0 + px * 2f, x0 + (cx + 1) * px, y0 + px * 3f, paint)
+                    canvas.drawRect(x0 + cx * px, y0 + px * 4f, x0 + (cx + 1) * px, y0 + px * 5f, paint)
+                    cx += 2
+                }
+                else -> {
+                    val g = font[ch - '0']
+                    for (r in 0 until 7) for (q in 0 until 5) {
+                        if (g[r][q] == '1') {
+                            canvas.drawRect(x0 + (cx + q) * px, y0 + r * px, x0 + (cx + q + 1) * px, y0 + (r + 1) * px, paint)
+                        }
+                    }
+                    cx += 6
+                }
+            }
+        }
+        val sl = slots ?: return
+        val pitch = (px * cols) / 48f
+        val sq = pitch * 0.78f
+        val by = y0 + dh + px * 3.5f
+        for (i in 0 until 48) {
+            paint.color = if (sl[i]) slotColor else C_TILE
+            val sx = x0 + i * pitch
+            canvas.drawRect(sx, by, sx + sq, by + sq, paint)
+        }
+    }
+
+    override fun drawContent(canvas: Canvas) {
+        if (pair) {
+            drawPair(canvas)
+            return
+        }
+        paint.color = color
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val dw = minOf(w / 4.9f, h / 1.6f)
+        val dh = dw * 1.6f
+        val t = dw * 0.30f
+        val gap = dw * 0.10f
+        val colonW = dw * 0.32f
+        val total = dw * 4f + colonW + gap * 4f
+        var x = (w - total) / 2f
+        val y = (h - dh) / 2f + dyShift
+        for (i in 0 until 4) {
+            if (i == 2) {
+                val cs = t * 0.9f
+                box(canvas, x + (colonW - cs) / 2f, y + dh * 0.28f, cs, cs, cs * 0.25f)
+                box(canvas, x + (colonW - cs) / 2f, y + dh * 0.64f, cs, cs, cs * 0.25f)
+                x += colonW + gap
+            }
+            drawDigit(canvas, text[i] - '0', x, y, dw, dh, t)
+            if (seams) seamLines(canvas, x, y, dw, dh)
+            x += dw + gap
+        }
+    }
+
+    private fun box(c: Canvas, x: Float, y: Float, w: Float, h: Float, r: Float) {
+        rect.set(x, y, x + w, y + h)
+        c.drawRoundRect(rect, r, r, paint)
+    }
+
+    private fun drawDigit(c: Canvas, d: Int, x: Float, y: Float, dw: Float, dh: Float, t: Float) {
+        val m = masks[d]
+        val r = t * 0.28f
+        if ('a' in m) box(c, x, y, dw, t, r)
+        if ('b' in m) box(c, x + dw - t, y, t, dh / 2f + t / 2f, r)
+        if ('c' in m) box(c, x + dw - t, y + dh / 2f - t / 2f, t, dh / 2f + t / 2f, r)
+        if ('d' in m) box(c, x, y + dh - t, dw, t, r)
+        if ('e' in m) box(c, x, y + dh / 2f - t / 2f, t, dh / 2f + t / 2f, r)
+        if ('f' in m) box(c, x, y, t, dh / 2f + t / 2f, r)
+        if ('g' in m) box(c, x, y + (dh - t) / 2f, dw, t, r)
+    }
+}
+
+class DotsView(ctx: Context) : View(ctx) {
+    var total = 40
+    var filled = 0
+    var marks: BooleanArray? = null
+
+    /** Optional intensity per square: 0 = none, 1..3 = light..strong orange. */
+    var levels: IntArray? = null
+    /** Squares from this index on are in the future (drawn very light). */
+    var futureFrom = Int.MAX_VALUE
+    /** Selected square (drawn dark), -1 = none. */
+    var selected = -1
+    var onPick: ((Int) -> Unit)? = null
+    private val paint = Paint()
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        val cb = onPick ?: return super.onTouchEvent(e)
+        if (e.action == MotionEvent.ACTION_DOWN) return true
+        if (e.action == MotionEvent.ACTION_UP && total > 0 && width > 0) {
+            val i = (e.x / (width.toFloat() / total)).toInt().coerceIn(0, total - 1)
+            if (i < futureFrom) cb(i)
+            return true
+        }
+        return super.onTouchEvent(e)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val cell = w / total
+        val s = minOf(cell * 0.62f, h)
+        val y = (h - s) / 2f
+        val mk = marks
+        val lv = levels
+        for (i in 0 until total) {
+            paint.color = when {
+                i == selected -> C_DARK
+                lv != null && i >= futureFrom -> Color.parseColor("#F1EDED")
+                lv != null -> when (lv.getOrElse(i) { 0 }) {
+                    0 -> C_TILE
+                    1 -> Color.parseColor("#F7C4A5")
+                    2 -> Color.parseColor("#FA9A5C")
+                    else -> C_ORANGE
+                }
+                (if (mk != null) (i < mk.size && mk[i]) else i < filled) -> C_ORANGE
+                else -> C_TILE
+            }
+            val x = i * cell + (cell - s) / 2f
+            canvas.drawRect(x, y, x + s, y + s, paint)
+        }
+    }
+}
+
+class BagsView(ctx: Context) : AssembleView(ctx) {
+    var active = 0
+        set(v) {
+            field = v
+            invalidate()
+        }
+    private val paint = Paint()
+
+    override fun drawContent(canvas: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val cw = w / 3f
+        for (i in 0..2) {
+            paint.color = if (i == active) C_ORANGE else Color.parseColor("#7A706D")
+            val bw = cw * 0.8f
+            val u = bw / 3f
+            val x0 = i * cw + cw * 0.1f
+            val base = h * 0.6f
+            canvas.drawRect(x0, base - u * 1.7f, x0 + u * 0.95f, base, paint)
+            canvas.drawRect(x0 + u, base - u * 2.3f, x0 + u * 1.95f, base, paint)
+            canvas.drawRect(x0 + u * 2f, base - u * 1.7f, x0 + u * 2.95f, base, paint)
+            paint.color = Color.WHITE
+            canvas.drawRect(x0 + u * 1.2f, base - u * 2.0f, x0 + u * 1.75f, base - u * 1.8f, paint)
+            paint.color = if (i == active) C_ORANGE else Color.parseColor("#7A706D")
+            val sq = u * 0.55f
+            for (k in 0..2) {
+                val sx = x0 + k * u * 1.05f + (u * 0.95f - sq) / 2f
+                canvas.drawRect(sx, base + u * 0.35f, sx + sq, base + u * 0.35f + sq, paint)
+            }
+        }
+    }
+}
+
+/** Sunrise + mountains + trees. progress 0..1 moves the sun up. */
+class SceneView(ctx: Context) : View(ctx) {
+    var progress = 0.3f
+        set(v) {
+            field = v.coerceIn(0f, 1f)
+            invalidate()
+        }
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val path = Path()
+    private val cFar = Color.parseColor("#DAD4D8")
+    private val cMid = Color.parseColor("#B8B1B8")
+    private val cNear = Color.parseColor("#8E8890")
+    private val cTree = Color.parseColor("#6E6870")
+    private val cSunTop = Color.parseColor("#FFB066")
+
+    private fun ridge(c: Canvas, color: Int, w: Float, h: Float, pts: FloatArray) {
+        path.reset()
+        path.moveTo(0f, h)
+        var i = 0
+        while (i < pts.size) {
+            path.lineTo(pts[i] * w, pts[i + 1] * h)
+            i += 2
+        }
+        path.lineTo(w, h)
+        path.close()
+        p.color = color
+        c.drawPath(path, p)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        p.style = Paint.Style.FILL
+
+        val r = h * 0.30f
+        val sx = w * 0.72f
+        val sy = h * (1.05f - 0.60f * progress)
+        p.shader = LinearGradient(sx, sy - r, sx, sy + r, cSunTop, C_ORANGE, Shader.TileMode.CLAMP)
+        canvas.drawCircle(sx, sy, r, p)
+        p.shader = null
+
+        ridge(canvas, cFar, w, h, floatArrayOf(0f, .62f, .12f, .45f, .25f, .60f, .38f, .40f, .55f, .62f, .70f, .50f, .85f, .60f, 1f, .48f))
+        ridge(canvas, cMid, w, h, floatArrayOf(0f, .78f, .15f, .60f, .30f, .75f, .50f, .55f, .68f, .78f, .85f, .62f, 1f, .74f))
+        ridge(canvas, cNear, w, h, floatArrayOf(0f, .88f, .20f, .78f, .40f, .90f, .60f, .80f, .80f, .90f, 1f, .82f))
+
+        p.color = cTree
+        for (i in 0 until 16) {
+            val tx = w * (i + 0.5f) / 16f
+            val th = h * (0.14f + 0.05f * ((i * 7) % 4))
+            val tw = th * 0.55f
+            val by = h * 0.97f
+            path.reset()
+            path.moveTo(tx - tw / 2f, by)
+            path.lineTo(tx, by - th)
+            path.lineTo(tx + tw / 2f, by)
+            path.close()
+            canvas.drawPath(path, p)
+        }
+    }
+}
+
+class RulerView(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
+    var onBlocked: (() -> Boolean)? = null
+    private val dens = ctx.resources.displayMetrics.density
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rect = RectF()
+    private var value = 180f
+    private var reported = 180
+    private var lastY = 0f
+    private var ignore = false
+    private var limitHit = false
+    private var shakeAnim: ValueAnimator? = null
+
+    fun setMinutes(m: Int) {
+        value = m.toFloat().coerceAtLeast(1f)
+        reported = m
+        invalidate()
+    }
+
+    /** Left-right wobble + reject haptic, used when the user tries to go past 1 min / 24 h. */
+    fun shake() {
+        shakeAnim?.cancel()
+        val amp = dens * 7f
+        val a = ValueAnimator.ofFloat(0f, 1f)
+        a.duration = 280L
         a.addUpdateListener {
-            val f = it.animatedValue as Float
-            rulerShown = f
-            rl.setMinutes(f.toInt())
+            val t = it.animatedValue as Float
+            translationX = (Math.sin(t * Math.PI * 6.0) * (1f - t) * amp).toFloat()
         }
         a.addListener(object : android.animation.AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: android.animation.Animator) {
-                if (rulerShown == to) rl.setMinutes(target)
-            }
+            override fun onAnimationEnd(animation: android.animation.Animator) { translationX = 0f }
+            override fun onAnimationCancel(animation: android.animation.Animator) { translationX = 0f }
         })
         a.start()
-        rulerAnim = a
-    }
-
-    private fun durTile(min: Int, top: String, bottom: String): TextView {
-        return tile(twoLine(top, bottom), durMin == min) {
-            if (locked()) {
-                lockedToast()
-            } else {
-                durMin = min
-                refreshDur(false)
-                updateLeft()
-            }
-        }
-    }
-
-    private fun stepDur(d: Int) {
-        if (locked()) {
-            lockedToast()
-            return
-        }
-        val n = (durMin + d).coerceIn(1, 1440)
-        if (n == durMin) {
-            ruler?.shake()
-            return
-        }
-        durMin = n
-        refreshDur(false)
-        updateLeft()
-    }
-
-    private fun customDialog() {
-        val origDur = durMin
-        var confirmed = false
-
-        val root = LinearLayout(this)
-        root.orientation = LinearLayout.VERTICAL
-        root.gravity = Gravity.CENTER_HORIZONTAL
-        root.setPadding(dp(22), dp(18), dp(22), dp(16))
-        root.background = rounded(Color.parseColor("#F6F2F1"), 28)
-
-        val title = TextView(this)
-        title.text = "Custom time"
-        title.textSize = 16f
-        title.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        title.setTextColor(C_DARK)
-        root.addView(title, LinearLayout.LayoutParams(WRAP, WRAP))
-
-        // scroll wheels: HRS | MIN  (infinite: 24 -> 00 and 59 -> 00)
-        val wheels = LinearLayout(this)
-        wheels.orientation = LinearLayout.HORIZONTAL
-        wheels.gravity = Gravity.CENTER
-        fun picker(max: Int, cur: Int): android.widget.NumberPicker {
-            val np = android.widget.NumberPicker(this)
-            np.minValue = 0
-            np.maxValue = max
-            np.value = cur
-            np.wrapSelectorWheel = true
-            np.setFormatter { String.format("%02d", it) }
-            np.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
-            return np
-        }
-        val ph = picker(24, (durMin / 60).coerceIn(0, 24))
-        val pm = picker(59, if (durMin / 60 >= 24) 0 else durMin % 60)
-        fun label(t: String): TextView {
-            val tv = TextView(this)
-            tv.text = t
-            tv.textSize = 11f
-            tv.letterSpacing = 0.2f
-            tv.setTextColor(C_DIMTXT)
-            tv.gravity = Gravity.CENTER
-            return tv
-        }
-        fun col(lbl: String, np: android.widget.NumberPicker): LinearLayout {
-            val c = LinearLayout(this)
-            c.orientation = LinearLayout.VERTICAL
-            c.gravity = Gravity.CENTER_HORIZONTAL
-            c.addView(label(lbl), LinearLayout.LayoutParams(WRAP, WRAP))
-            c.addView(np, LinearLayout.LayoutParams(dp(90), dp(130)))
-            return c
-        }
-        val sep = TextView(this)
-        sep.text = ":"
-        sep.textSize = 26f
-        sep.setTextColor(C_DARK)
-        sep.gravity = Gravity.CENTER
-        wheels.addView(col("HRS", ph), LinearLayout.LayoutParams(WRAP, WRAP))
-        wheels.addView(sep, LinearLayout.LayoutParams(dp(28), WRAP))
-        wheels.addView(col("MIN", pm), LinearLayout.LayoutParams(WRAP, WRAP))
-        val wLp = LinearLayout.LayoutParams(WRAP, WRAP)
-        wLp.topMargin = dp(6)
-        root.addView(wheels, wLp)
-
-        val ok = TextView(this)
-        fun total() = ph.value * 60 + pm.value
-
-        fun refresh() {
-            // 24h = max, so minutes must be 00 there
-            if (ph.value == 24 && pm.value != 0) pm.value = 0
-            val t = total()
-            ok.alpha = if (t in 1..1440) 1f else 0.4f
-            // live update on the main page behind the dialog
-            if (t in 1..1440 && t != durMin) {
-                durMin = t
-                refreshDur(false)
-                updateLeft()
-            }
-        }
-        ph.setOnValueChangedListener { _, _, nv ->
-            if (nv == 24) pm.value = 0
-            refresh()
-        }
-        pm.setOnValueChangedListener { _, _, _ ->
-            if (ph.value == 24) pm.value = 0
-            refresh()
-        }
-
-        // quick chips: +5m +10m +30m +1h
-        val chips = LinearLayout(this)
-        chips.orientation = LinearLayout.HORIZONTAL
-        chips.gravity = Gravity.CENTER
-        for ((txt, add) in listOf("+5m" to 5, "+10m" to 10, "+30m" to 30, "+1h" to 60)) {
-            val ch = TextView(this)
-            ch.text = txt
-            ch.textSize = 14f
-            ch.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            ch.setTextColor(C_DARK)
-            ch.gravity = Gravity.CENTER
-            ch.background = rounded(C_TILE, 18)
-            ch.setOnClickListener {
-                val t = (total() + add).coerceAtMost(1440)
-                ph.value = t / 60
-                pm.value = if (t >= 1440) 0 else t % 60
-                refresh()
-            }
-            val lp = LinearLayout.LayoutParams(dp(62), dp(38))
-            lp.leftMargin = dp(4)
-            lp.rightMargin = dp(4)
-            chips.addView(ch, lp)
-        }
-        val cLp = LinearLayout.LayoutParams(WRAP, WRAP)
-        cLp.topMargin = dp(10)
-        root.addView(chips, cLp)
-
-        val hint = TextView(this)
-        hint.text = "Max 24 hours"
-        hint.textSize = 12f
-        hint.setTextColor(C_DIMTXT)
-        hint.gravity = Gravity.CENTER
-        val hLp = LinearLayout.LayoutParams(WRAP, WRAP)
-        hLp.topMargin = dp(8)
-        root.addView(hint, hLp)
-
-        val dlg = AlertDialog.Builder(this).setView(root).create()
-
-        val btns = LinearLayout(this)
-        btns.orientation = LinearLayout.HORIZONTAL
-        btns.gravity = Gravity.CENTER
-        val cancel = TextView(this)
-        cancel.text = "Cancel"
-        cancel.textSize = 15f
-        cancel.setTextColor(C_DARK)
-        cancel.gravity = Gravity.CENTER
-        cancel.background = rounded(C_TILE, 24)
-        cancel.setOnClickListener { dlg.dismiss() }
-        ok.text = "Set"
-        ok.textSize = 15f
-        ok.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        ok.setTextColor(Color.WHITE)
-        ok.gravity = Gravity.CENTER
-        ok.background = rounded(C_DARK, 24)
-        ok.setOnClickListener {
-            val t = total()
-            if (t in 1..1440) {
-                confirmed = true
-                dlg.dismiss()
-            } else {
-                toast("Pick between 1 minute and 24 hours")
-            }
-        }
-        val b1 = LinearLayout.LayoutParams(dp(110), dp(48))
-        b1.rightMargin = dp(8)
-        btns.addView(cancel, b1)
-        btns.addView(ok, LinearLayout.LayoutParams(dp(130), dp(48)))
-        val bLp = LinearLayout.LayoutParams(WRAP, WRAP)
-        bLp.topMargin = dp(14)
-        root.addView(btns, bLp)
-
-        // cancel / tap outside => put the old duration back
-        dlg.setOnDismissListener {
-            if (!confirmed && durMin != origDur) {
-                durMin = origDur
-                refreshDur(false)
-                updateLeft()
-            }
-        }
-
-        refresh()
-        dlg.window?.let { w ->
-            w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
-            // keep the page behind visible so the live update can be seen
-            w.setDimAmount(0.12f)
-            val land = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            if (land) {
-                w.setGravity(Gravity.END or Gravity.CENTER_VERTICAL)
-                val lp = w.attributes
-                lp.x = dp(24)
-                w.attributes = lp
-            } else {
-                w.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
-                val lp = w.attributes
-                lp.y = dp(24)
-                w.attributes = lp
-            }
-        }
-        dlg.show()
-    }
-
-    private fun toggleStrict() {
-        if (Store.active(this)) { toast("Can't change during a session"); return }
-        Store.setStrict(this, !Store.strict(this))
-        render()
-    }
-
-    private fun toggleMode() {
-        if (Store.active(this)) { toast("Can't change during a session"); return }
-        Store.setAllowMode(this, !Store.allowMode(this))
-        render()
-        updateLeft()
-    }
-
-    private fun timerPage(): View {
-        val col = vbox()
-        if (!accEnabled()) {
-            val b = tile("Accessibility OFF  \u00B7  tap to turn ON", false) {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
-            b.textSize = 14f
-            b.setTextColor(Color.WHITE)
-            b.background = rounded(C_ORANGE, 16)
-            col.addView(b, lpV(dp(52)))
-        }
-
-        val a = durTile(15, "15", "Minutes")
-        val b = durTile(45, "45", "Minutes")
-        val c = durTile(180, "3", "Hours")
-        val preset = durMin == 15 || durMin == 45 || durMin == 180
-        val d = tile(twoLine(fmt(durMin), "Custom"), !preset) {
-            if (locked()) lockedToast() else customDialog()
-        }
-        t15 = a
-        t45 = b
-        t180 = c
-        tCustom = d
-
-        val tilesCol = LinearLayout(this)
-        tilesCol.orientation = LinearLayout.VERTICAL
-        tilesCol.addView(hrow(a, b), lpV())
-        val lowLp = LinearLayout.LayoutParams(MATCH, 0, 1.7f)
-        lowLp.setMargins(0, dp(5), 0, dp(5))
-        tilesCol.addView(hrow(c, d), lowLp)
-
-        rulerAnim?.cancel()
-        val rl = RulerView(this) { m ->
-            durMin = m
-            rulerShown = m.toFloat()
-            refreshDur(true)
-            updateLeft()
-        }
-        rl.onBlocked = {
-            rulerAnim?.cancel()
-            if (locked()) {
-                lockedToast()
-                true
-            } else {
-                false
-            }
-        }
-        rl.setMinutes(durMin)
-        rulerShown = durMin.toFloat()
-        ruler = rl
-
-        val up = IconView(this, IconView.UP)
-        up.setOnClickListener { stepDur(5) }
-        val down = IconView(this, IconView.DOWN)
-        down.setOnClickListener { stepDur(-5) }
-        val stepBox = LinearLayout(this)
-        stepBox.orientation = LinearLayout.VERTICAL
-        val sbg = GradientDrawable()
-        sbg.setColor(Color.TRANSPARENT)
-        sbg.cornerRadius = dp(24).toFloat()
-        sbg.setStroke(dp(1), C_LINE)
-        stepBox.background = sbg
-        stepBox.addView(up, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        val divider = View(this)
-        divider.setBackgroundColor(C_LINE)
-        val dl = LinearLayout.LayoutParams(MATCH, dp(1))
-        dl.setMargins(dp(12), 0, dp(12), 0)
-        stepBox.addView(divider, dl)
-        stepBox.addView(down, LinearLayout.LayoutParams(MATCH, 0, 1f))
-
-        val rulerCol = LinearLayout(this)
-        rulerCol.orientation = LinearLayout.VERTICAL
-        val rlp = LinearLayout.LayoutParams(MATCH, 0, 1f)
-        rlp.bottomMargin = dp(8)
-        rulerCol.addView(rl, rlp)
-        rulerCol.addView(stepBox, LinearLayout.LayoutParams(MATCH, dp(84)))
-
-        val main = LinearLayout(this)
-        main.orientation = LinearLayout.HORIZONTAL
-        val tl = LinearLayout.LayoutParams(0, MATCH, 1f)
-        tl.rightMargin = dp(8)
-        main.addView(tilesCol, tl)
-        main.addView(rulerCol, LinearLayout.LayoutParams(dp(64), MATCH))
-        col.addView(main, lpV())
-
-        val strictTile = tile("STRICT\n" + if (Store.strict(this)) "ON" else "OFF", Store.strict(this)) { toggleStrict() }
-        val modeTile = tile("MODE\n" + if (Store.allowMode(this)) "BAG (allow only)" else "BLOCK", Store.allowMode(this)) { toggleMode() }
-        strictTile.textSize = 14f
-        modeTile.textSize = 14f
-        col.addView(hrow(strictTile, modeTile), lpV(dp(60)))
-
-        if (!Store.active(this)) {
-            col.addView(SlideView(this) { startFocus() }, lpV(dp(64)))
-        } else if (Store.sessionOn(this) && !Store.strict(this)) {
-            col.addView(tile("End session", false) {
-                Store.stopSession(this)
-                render()
-                updateLeft()
-            }, lpV(dp(64)))
-        } else if (Store.strict(this)) {
-            col.addView(tile("STRICT ON  \u00B7  locked until the timer ends", false) {}, lpV(dp(64)))
-        } else {
-            col.addView(tile("Routine running (turn it off from the Routines tab)", false) {}, lpV(dp(64)))
-        }
-        return col
-    }
-
-    private fun startFocus() {
-        if (Store.selected(this).isEmpty()) {
-            toast("Add apps in the Bags tab first")
-            return
-        }
-        if (!accEnabled()) {
-            toast("Turn Accessibility ON first")
-            return
-        }
-        val go = {
-            Store.startSession(this, durMin.toLong())
-            render()
-            updateLeft()
-            syncFocus()
-        }
-        if (Store.strict(this)) {
-            AlertDialog.Builder(this)
-                .setTitle("Strict mode")
-                .setMessage("You won't be able to end for ${durMin / 60}h ${durMin % 60}m and Settings will be blocked. Sure?")
-                .setPositiveButton("Yes") { _, _ -> go() }
-                .setNegativeButton("No", null)
-                .show()
-        } else {
-            go()
-        }
-    }
-
-    // ---------- Page 1: Bags ----------
-    private val C_CELL = Color.parseColor("#F3EFEF")
-    private val C_DIMTXT = Color.parseColor("#A9A2A0")
-
-    private fun bagTab(i: Int): TextView {
-        if (i == 0) {
-            val t = tile("Bag 1", false) {}
-            t.setTextColor(Color.WHITE)
-            t.background = rounded(C_ORANGE, 26)
-            return t
-        }
-        val t = tile("Bag ${i + 1}", false) {
-            toast("Bag ${i + 1} locked  \u00B7  future me padhai wale apps ke liye")
-        }
-        t.setTextColor(C_DIMTXT)
-        t.background = rounded(C_CELL, 26)
-        return t
-    }
-
-    private fun bagsPage(): View {
-        val col = vbox()
-        val panel = LinearLayout(this)
-        panel.orientation = LinearLayout.VERTICAL
-        panel.background = rounded(C_TILE, 28)
-        panel.setPadding(dp(8), dp(8), dp(8), dp(8))
-
-        panel.addView(hrow(bagTab(0), bagTab(1), bagTab(2)), lpV(dp(52)))
-        val list = Store.bag(this, 0).toList().sorted()
-        val cells = ArrayList<View>()
-        for (i in 0 until 6) {
-            val cell = FrameLayout(this)
-            cell.background = rounded(C_CELL, 20)
-            if (i < Store.MAX_BAG_APPS) {
-                if (i < list.size) {
-                    val iv = ImageView(this)
-                    iv.setImageDrawable(icon(list[i]))
-                    val lp = FrameLayout.LayoutParams(dp(44), dp(44))
-                    lp.gravity = Gravity.CENTER
-                    cell.addView(iv, lp)
-                }
-                cell.setOnClickListener { showPicker() }
-            } else {
-                val lk = IconView(this, IconView.LOCK)
-                lk.tint = Color.parseColor("#F0A98B")
-                val lp = FrameLayout.LayoutParams(dp(30), dp(34))
-                lp.gravity = Gravity.CENTER
-                cell.addView(lk, lp)
-                cell.setOnClickListener { toast("Bag 1 me sirf ${Store.MAX_BAG_APPS} apps le sakte ho") }
-            }
-            cells.add(cell)
-        }
-        panel.addView(hrow(cells[0], cells[1], cells[2]), lpV())
-        panel.addView(hrow(cells[3], cells[4], cells[5]), lpV())
-        val pl = LinearLayout.LayoutParams(MATCH, 0, 1f)
-        pl.setMargins(0, dp(5), 0, dp(5))
-        col.addView(panel, pl)
-
-        col.addView(hrow(
-            tile("Add / remove apps  ${list.size}/${Store.MAX_BAG_APPS}", true) { showPicker() },
-            tile("Clear bag", false) {
-                if (locked()) {
-                    lockedToast()
-                } else {
-                    Store.setBag(this, 0, emptySet())
-                    render()
-                    updateLeft()
-                }
-            }
-        ), lpV(dp(80)))
-        return col
-    }
-
-    private fun showPicker() {
-        if (locked()) {
-            lockedToast()
-            return
-        }
-        val set = HashSet(Store.bag(this, 0))
-        var shown: List<App> = allApps
-
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(12), dp(8), dp(12), dp(0))
-        val search = EditText(this)
-        search.hint = "Search app"
-        search.isSingleLine = true
-        col.addView(search)
-
-        val lv = ListView(this)
-        val ad = object : BaseAdapter() {
-            override fun getCount() = shown.size
-            override fun getItem(i: Int): Any = shown[i]
-            override fun getItemId(i: Int) = i.toLong()
-            override fun getView(i: Int, v: View?, parent: ViewGroup?): View {
-                val a = shown[i]
-                val row = (v as? LinearLayout) ?: LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(8), dp(6), dp(8), dp(6))
-                    val iv = ImageView(this@MainActivity)
-                    addView(iv, LinearLayout.LayoutParams(dp(40), dp(40)))
-                    val tv = TextView(this@MainActivity)
-                    tv.textSize = 16f
-                    tv.setPadding(dp(12), 0, dp(8), 0)
-                    addView(tv, LinearLayout.LayoutParams(0, WRAP, 1f))
-                    val cb = CheckBox(this@MainActivity)
-                    cb.isClickable = false
-                    cb.isFocusable = false
-                    addView(cb)
-                }
-                (row.getChildAt(0) as ImageView).setImageDrawable(icon(a.pkg))
-                (row.getChildAt(1) as TextView).text = a.label
-                (row.getChildAt(2) as CheckBox).isChecked = a.pkg in set
-                return row
-            }
-        }
-        lv.adapter = ad
-        lv.setOnItemClickListener { _, _, i, _ ->
-            val p = shown[i].pkg
-            if (p in set) {
-                set.remove(p)
-            } else if (set.size >= Store.MAX_BAG_APPS) {
-                toast("Bag 1 me max ${Store.MAX_BAG_APPS} apps")
-            } else {
-                set.add(p)
-            }
-            ad.notifyDataSetChanged()
-        }
-        search.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) {
-                val q = s?.toString() ?: ""
-                shown = if (q.isBlank()) allApps else allApps.filter { it.label.contains(q, ignoreCase = true) }
-                ad.notifyDataSetChanged()
-            }
-            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
-            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
-        })
-
-        val bar = LinearLayout(this)
-        bar.orientation = LinearLayout.HORIZONTAL
-        val bNone = Button(this)
-        bNone.text = "Clear all"
-        bNone.setOnClickListener {
-            set.clear()
-            ad.notifyDataSetChanged()
-        }
-        bar.addView(bNone, LinearLayout.LayoutParams(0, WRAP, 1f))
-        col.addView(bar)
-        col.addView(lv, LinearLayout.LayoutParams(MATCH, dp(360)))
-
-        AlertDialog.Builder(this)
-            .setTitle("Bag 1 apps (max ${Store.MAX_BAG_APPS})")
-            .setView(col)
-            .setPositiveButton("Save") { _, _ ->
-                Store.setBag(this, 0, set)
-                render()
-                updateLeft()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    // ---------- Page 2: Routines (blockit style) ----------
-    private fun rtDuration(): CharSequence {
-        val on = Store.rtOn(this, rtSel)
-        val d = ((Store.rtEnd(this, rtSel) - Store.rtStart(this, rtSel)) + 1440) % 1440
-        val dur = if (d / 60 == 0) "${d % 60}m" else "${d / 60}h ${d % 60}m"
-        val head = if (on) "On" else "Off"
-        val sb = SpannableStringBuilder(head)
-        sb.setSpan(ForegroundColorSpan(if (on) C_TXT else C_DIMTXT), 0, head.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        sb.append("  \u00B7  ")
-        val st = sb.length
-        sb.append(dur)
-        sb.setSpan(ForegroundColorSpan(if (on) C_ORANGE else Color.parseColor("#F2B89C")), st, sb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        return sb
-    }
-
-    private fun rtCard(i: Int): View {
-        val sel = rtSel == i
-        val on = Store.rtOn(this, i)
-        val card = LinearLayout(this)
-        card.orientation = LinearLayout.VERTICAL
-        card.gravity = Gravity.CENTER
-        card.background = if (sel) rounded(Color.parseColor("#E0DAD9"), 20) else null
-        val top = TextView(this)
-        top.text = "ROUTINE ${i + 1}"
-        top.textSize = 11f
-        top.letterSpacing = 0.15f
-        top.setTextColor(if (sel) C_TXT else C_DIMTXT)
-        top.gravity = Gravity.CENTER
-        val tm = TextView(this)
-        tm.text = fmt(Store.rtStart(this, i))
-        tm.textSize = 24f
-        tm.setTextColor(if (sel) C_TXT else C_DIMTXT)
-        tm.gravity = Gravity.CENTER
-        rtTimeTvs[i] = tm
-        val line = View(this)
-        line.background = rounded(if (on) C_ORANGE else Color.parseColor("#D2CBCA"), 2)
-        card.addView(top, LinearLayout.LayoutParams(WRAP, WRAP))
-        val tl = LinearLayout.LayoutParams(WRAP, WRAP)
-        tl.setMargins(0, dp(6), 0, dp(10))
-        card.addView(tm, tl)
-        card.addView(line, LinearLayout.LayoutParams(dp(56), dp(3)))
-        card.setOnClickListener {
-            if (rtSel != i) {
-                rtSel = i
-                render()
-                updateLeft()
-                pc.assemble()
-            }
-        }
-        return card
-    }
-
-    private fun routinesPage(): View {
-        val panel = LinearLayout(this)
-        panel.orientation = LinearLayout.VERTICAL
-        panel.background = rounded(C_TILE, 28)
-        panel.setPadding(dp(10), dp(10), dp(10), dp(10))
-
-        // top: 3 routine cards + lock / on-off column
-        val on = Store.rtOn(this, rtSel)
-        val topRow = LinearLayout(this)
-        topRow.orientation = LinearLayout.HORIZONTAL
-        for (i in 0..2) {
-            val lp = LinearLayout.LayoutParams(0, MATCH, 1f)
-            lp.setMargins(dp(3), 0, dp(3), 0)
-            topRow.addView(rtCard(i), lp)
-        }
-        val side = LinearLayout(this)
-        side.orientation = LinearLayout.VERTICAL
-        val lockBox = FrameLayout(this)
-        val lbg = GradientDrawable()
-        lbg.setColor(Color.TRANSPARENT)
-        lbg.cornerRadius = dp(14).toFloat()
-        lbg.setStroke(dp(1), C_LINE)
-        lockBox.background = lbg
-        val lk = IconView(this, IconView.LOCK)
-        lk.tint = C_DARK
-        val lkp = FrameLayout.LayoutParams(dp(20), dp(22))
-        lkp.gravity = Gravity.CENTER
-        lockBox.addView(lk, lkp)
-        lockBox.setOnClickListener { toast("Coming soon") }
-        val onBox = View(this)
-        onBox.background = rounded(if (on) C_ORANGE else Color.parseColor("#7A706D"), 14)
-        onBox.setOnClickListener {
-            if (locked()) {
-                lockedToast()
-            } else {
-                Store.setRtOn(this, rtSel, !Store.rtOn(this, rtSel))
-                render()
-                updateLeft()
-            }
-        }
-        val sl1 = LinearLayout.LayoutParams(MATCH, 0, 1f)
-        sl1.bottomMargin = dp(4)
-        val sl2 = LinearLayout.LayoutParams(MATCH, 0, 1.3f)
-        sl2.topMargin = dp(4)
-        side.addView(lockBox, sl1)
-        side.addView(onBox, sl2)
-        val sp = LinearLayout.LayoutParams(dp(60), MATCH)
-        sp.setMargins(dp(6), 0, 0, 0)
-        topRow.addView(side, sp)
-        panel.addView(topRow, LinearLayout.LayoutParams(MATCH, 0, 1.7f))
-
-        // days: vertical on/off sliders
-        val names = arrayOf("S", "M", "T", "W", "T", "F", "S")
-        val mask0 = Store.rtDays(this, rtSel)
-        val letters = ArrayList<TextView>()
-        val dayRow = LinearLayout(this)
-        dayRow.orientation = LinearLayout.HORIZONTAL
-        for (d in 0..6) {
-            val dOn = ((mask0 shr d) and 1) == 1
-            val c = LinearLayout(this)
-            c.orientation = LinearLayout.VERTICAL
-            c.gravity = Gravity.CENTER_HORIZONTAL
-            val tv = TextView(this)
-            tv.text = names[d]
-            tv.textSize = 20f
-            tv.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-            tv.gravity = Gravity.CENTER
-            tv.setTextColor(if (dOn) C_TXT else C_DIMTXT)
-            letters.add(tv)
-            val tog = DayToggleView(this, dOn) { nv ->
-                if (locked()) {
-                    lockedToast()
-                    false
-                } else {
-                    val m = Store.rtDays(this, rtSel)
-                    Store.setRtDays(this, rtSel, if (nv) m or (1 shl d) else m and (1 shl d).inv())
-                    letters[d].setTextColor(if (nv) C_TXT else C_DIMTXT)
-                    updateLeft()
-                    true
-                }
-            }
-            c.addView(tv, LinearLayout.LayoutParams(MATCH, dp(40)))
-            c.addView(tog, LinearLayout.LayoutParams(MATCH, 0, 1f))
-            val lp = LinearLayout.LayoutParams(0, MATCH, 1f)
-            lp.setMargins(dp(5), 0, dp(5), 0)
-            dayRow.addView(c, lp)
-        }
-        val dl = LinearLayout.LayoutParams(MATCH, 0, 3.6f)
-        dl.setMargins(0, dp(8), 0, dp(4))
-        panel.addView(dayRow, dl)
-
-        // status: Off · 5h 35m
-        val st = TextView(this)
-        st.gravity = Gravity.CENTER
-        st.textSize = 18f
-        st.text = rtDuration()
-        rtStatusTv = st
-        panel.addView(st, LinearLayout.LayoutParams(MATCH, dp(34)))
-
-        // bottom: start / end rulers
-        fun rulerCol(label: String, start: Boolean): LinearLayout {
-            val box = LinearLayout(this)
-            box.orientation = LinearLayout.VERTICAL
-            val init = if (start) Store.rtStart(this, rtSel) else Store.rtEnd(this, rtSel)
-            val r = HRulerView(this, init) { v ->
-                if (start) Store.setRtStart(this, rtSel, v) else Store.setRtEnd(this, rtSel, v)
-                rtStatusTv?.text = rtDuration()
-                rtTimeTvs[rtSel]?.text = fmt(Store.rtStart(this, rtSel))
-                updateLeft()
-            }
-            r.onBlocked = {
-                if (locked()) {
-                    lockedToast()
-                    true
-                } else {
-                    false
-                }
-            }
-            val lb = TextView(this)
-            lb.text = label
-            lb.textSize = 12f
-            lb.letterSpacing = 0.2f
-            lb.gravity = Gravity.CENTER
-            lb.setTextColor(C_TXT)
-            box.addView(r, LinearLayout.LayoutParams(MATCH, 0, 1f))
-            box.addView(lb, LinearLayout.LayoutParams(MATCH, dp(28)))
-            return box
-        }
-        panel.addView(hrow(rulerCol("START", true), rulerCol("END", false)), LinearLayout.LayoutParams(MATCH, 0, 1.5f))
-        return panel
-    }
-
-    // ---------- Page 3: Stats ----------
-    private var stMode = 1                       // 0 = Day, 1 = Month, 2 = Year
-    private var stCal: Calendar = Calendar.getInstance()
-
-    private fun hm(min: Int): String = if (min >= 60) "${min / 60}h ${min % 60}m" else "${min}m"
-
-    private fun monthSum(y: Int, m: Int): Int {
-        val c = Calendar.getInstance()
-        c.clear()
-        c.set(y, m, 1)
-        var sum = 0L
-        for (d in 1..c.getActualMaximum(Calendar.DAY_OF_MONTH)) sum += Store.dayMinutes(this, y, m, d)
-        return sum.toInt()
-    }
-
-    private fun yearSum(y: Int): Int {
-        var sum = 0
-        for (m in 0..11) sum += monthSum(y, m)
-        return sum
-    }
-
-    private fun stTotal(): Int {
-        val y = stCal.get(Calendar.YEAR)
-        val m = stCal.get(Calendar.MONTH)
-        return when (stMode) {
-            0 -> Store.dayMinutes(this, y, m, stCal.get(Calendar.DAY_OF_MONTH)).toInt()
-            1 -> monthSum(y, m)
-            else -> yearSum(y)
-        }
-    }
-
-    private fun stLabel(): String = when (stMode) {
-        0 -> SimpleDateFormat("EEEE d MMM yyyy", Locale.getDefault()).format(stCal.time).uppercase()
-        1 -> SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(stCal.time).uppercase()
-        else -> stCal.get(Calendar.YEAR).toString()
-    }
-
-    private fun stThisPeriodWord(): String {
-        val now = Calendar.getInstance()
-        val y = stCal.get(Calendar.YEAR)
-        val m = stCal.get(Calendar.MONTH)
-        return when (stMode) {
-            0 -> if (y == now.get(Calendar.YEAR) && stCal.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)) "TODAY" else "THAT DAY"
-            1 -> if (y == now.get(Calendar.YEAR) && m == now.get(Calendar.MONTH)) "THIS MONTH" else "THAT MONTH"
-            else -> if (y == now.get(Calendar.YEAR)) "THIS YEAR" else "THAT YEAR"
-        }
-    }
-
-    /** Days (up to today) of the scope: Day -> its month, Month -> month, Year -> year. */
-    private fun stScopeDays(): List<Int> {
-        val now = Calendar.getInstance()
-        val y = stCal.get(Calendar.YEAR)
-        val out = ArrayList<Int>()
-        val months = if (stMode == 2) 0..11 else stCal.get(Calendar.MONTH)..stCal.get(Calendar.MONTH)
-        for (m in months) {
-            val c = Calendar.getInstance()
-            c.clear()
-            c.set(y, m, 1)
-            for (d in 1..c.getActualMaximum(Calendar.DAY_OF_MONTH)) {
-                c.set(y, m, d)
-                if (c.timeInMillis > now.timeInMillis) break
-                out.add(Store.dayMinutes(this, y, m, d).toInt())
-            }
-        }
-        return out
-    }
-
-    private fun stStreak(): Int {
-        val c = Calendar.getInstance()
-        if (Store.dayMinutes(this, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)) <= 0L) {
-            c.add(Calendar.DAY_OF_YEAR, -1)   // aaj abhi 0 hai to kal se gino
-        }
-        var n = 0
-        while (n < 3650 && Store.dayMinutes(this, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)) > 0L) {
-            n++
-            c.add(Calendar.DAY_OF_YEAR, -1)
-        }
-        return n
-    }
-
-    private fun stShift(dir: Int) {
-        val c = stCal.clone() as Calendar
-        when (stMode) {
-            0 -> c.add(Calendar.DAY_OF_YEAR, dir)
-            1 -> { c.set(Calendar.DAY_OF_MONTH, 1); c.add(Calendar.MONTH, dir) }
-            else -> { c.set(Calendar.MONTH, 0); c.set(Calendar.DAY_OF_MONTH, 1); c.add(Calendar.YEAR, dir) }
-        }
-        if (c.timeInMillis > System.currentTimeMillis()) return
-        stCal = c
-        refreshStats()
-    }
-
-    private fun stSetMode(m: Int) {
-        val now = Calendar.getInstance()
-        val sameMonth = stCal.get(Calendar.YEAR) == now.get(Calendar.YEAR) && stCal.get(Calendar.MONTH) == now.get(Calendar.MONTH)
-        val sameYear = stCal.get(Calendar.YEAR) == now.get(Calendar.YEAR)
-        if ((m != 2 && sameMonth) || (m == 2 && sameYear)) stCal = now
-        stMode = m
-        refreshStats()
-    }
-
-    private fun refreshStats() {
-        if (tab != 3) return
-        host.removeAllViews()
-        host.addView(statsPage(), FrameLayout.LayoutParams(MATCH, MATCH))
-        updateLeft()
-    }
-
-    /** Left card: big digits = period total, squares = days (or months in Year mode), tap to drill down. */
-    private fun updateStatsLeft() {
-        val now = Calendar.getInstance()
-        val y = stCal.get(Calendar.YEAR)
-        val m = stCal.get(Calendar.MONTH)
-        val total = stTotal()
-        pc.show(total, C_ORANGE)
-
-        val vals: IntArray
-        var future = Int.MAX_VALUE
-        var sel: Int
-        if (stMode == 2) {
-            vals = IntArray(12) { monthSum(y, it) }
-            if (y == now.get(Calendar.YEAR)) future = now.get(Calendar.MONTH) + 1
-            sel = m
-        } else {
-            val c = Calendar.getInstance()
-            c.clear()
-            c.set(y, m, 1)
-            val n = c.getActualMaximum(Calendar.DAY_OF_MONTH)
-            vals = IntArray(n) { Store.dayMinutes(this, y, m, it + 1).toInt() }
-            if (y == now.get(Calendar.YEAR) && m == now.get(Calendar.MONTH)) future = now.get(Calendar.DAY_OF_MONTH)
-            sel = if (stMode == 0) stCal.get(Calendar.DAY_OF_MONTH) - 1 else -1
-        }
-        val mx = vals.maxOrNull() ?: 0
-        dots.total = vals.size
-        dots.levels = IntArray(vals.size) { i ->
-            if (mx <= 0 || vals[i] <= 0) 0 else Math.ceil(3.0 * vals[i] / mx).toInt().coerceIn(1, 3)
-        }
-        dots.futureFrom = future
-        dots.selected = sel
-        dots.onPick = { i ->
-            if (stMode == 2) {
-                stCal = Calendar.getInstance().also { it.clear(); it.set(y, i, 1) }
-                if (y == now.get(Calendar.YEAR) && i == now.get(Calendar.MONTH)) stCal = Calendar.getInstance()
-                stMode = 1
-            } else {
-                stCal = Calendar.getInstance().also { it.clear(); it.set(y, m, i + 1, 0, 0) }
-                stMode = 0
-            }
-            refreshStats()
-        }
-        dots.invalidate()
-        caption.text = stLabel() + "  \u00B7  " + (if (total <= 0) "NO FOCUS YET" else "HH:MM")
-    }
-
-    private fun statTile(top: String, bottom: String): TextView {
-        val sb = SpannableStringBuilder()
-        sb.append(top)
-        sb.setSpan(AbsoluteSizeSpan(22, true), 0, top.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        sb.setSpan(StyleSpan(Typeface.BOLD), 0, top.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        sb.append("\n").append(bottom)
-        val t = tile(sb, false) {}
-        t.textSize = 11f
-        t.letterSpacing = 0.08f
-        return t
-    }
-
-    private fun monthPickerDialog() {
-        val now = Calendar.getInstance()
-        val root = LinearLayout(this)
-        root.orientation = LinearLayout.VERTICAL
-        root.gravity = Gravity.CENTER_HORIZONTAL
-        root.setPadding(dp(22), dp(20), dp(22), dp(18))
-        root.background = rounded(Color.parseColor("#F6F2F1"), 28)
-        val title = TextView(this)
-        title.text = "Pick month"
-        title.textSize = 18f
-        title.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        title.setTextColor(C_DARK)
-        root.addView(title, LinearLayout.LayoutParams(WRAP, WRAP))
-
-        val minY = now.get(Calendar.YEAR) - 5
-        val py = android.widget.NumberPicker(this)
-        py.minValue = minY
-        py.maxValue = now.get(Calendar.YEAR)
-        py.value = stCal.get(Calendar.YEAR).coerceIn(minY, now.get(Calendar.YEAR))
-        py.wrapSelectorWheel = false
-        val names = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-        val pmo = android.widget.NumberPicker(this)
-        pmo.minValue = 0
-        pmo.maxValue = 11
-        pmo.displayedValues = names
-        pmo.value = stCal.get(Calendar.MONTH)
-        pmo.wrapSelectorWheel = false
-        py.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
-        pmo.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        row.gravity = Gravity.CENTER
-        row.addView(pmo, LinearLayout.LayoutParams(dp(100), dp(130)))
-        val gap = View(this)
-        row.addView(gap, LinearLayout.LayoutParams(dp(20), 1))
-        row.addView(py, LinearLayout.LayoutParams(dp(110), dp(130)))
-        val rLp = LinearLayout.LayoutParams(WRAP, WRAP)
-        rLp.topMargin = dp(10)
-        root.addView(row, rLp)
-
-        val dlg = AlertDialog.Builder(this).setView(root).create()
-        val btns = LinearLayout(this)
-        btns.gravity = Gravity.CENTER
-        val cancel = TextView(this)
-        cancel.text = "Cancel"
-        cancel.textSize = 15f
-        cancel.setTextColor(C_DARK)
-        cancel.gravity = Gravity.CENTER
-        cancel.background = rounded(C_TILE, 24)
-        cancel.setOnClickListener { dlg.dismiss() }
-        val ok = TextView(this)
-        ok.text = "Go"
-        ok.textSize = 15f
-        ok.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        ok.setTextColor(Color.WHITE)
-        ok.gravity = Gravity.CENTER
-        ok.background = rounded(C_DARK, 24)
-        ok.setOnClickListener {
-            val c = Calendar.getInstance()
-            c.clear()
-            c.set(py.value, pmo.value, 1, 0, 0)
-            if (c.timeInMillis > System.currentTimeMillis()) {
-                toast("That month hasn't started yet")
-            } else {
-                stCal = if (py.value == now.get(Calendar.YEAR) && pmo.value == now.get(Calendar.MONTH)) Calendar.getInstance() else c
-                if (stMode == 0) stMode = 1
-                dlg.dismiss()
-                refreshStats()
-            }
-        }
-        val b1 = LinearLayout.LayoutParams(dp(110), dp(48))
-        b1.rightMargin = dp(8)
-        btns.addView(cancel, b1)
-        btns.addView(ok, LinearLayout.LayoutParams(dp(130), dp(48)))
-        val bLp = LinearLayout.LayoutParams(WRAP, WRAP)
-        bLp.topMargin = dp(14)
-        root.addView(btns, bLp)
-        dlg.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
-        dlg.show()
-    }
-
-    private fun statsPage(): View {
-        val col = vbox()
-        val total = stTotal()
-
-        // top bar:  <  NOVEMBER 2026  >
-        val bar = LinearLayout(this)
-        bar.orientation = LinearLayout.HORIZONTAL
-        val prev = tile("\u2039", false) { stShift(-1) }
-        prev.textSize = 28f
-        val next = tile("\u203A", false) { stShift(1) }
-        next.textSize = 28f
-        val probe = stCal.clone() as Calendar
-        when (stMode) {
-            0 -> probe.add(Calendar.DAY_OF_YEAR, 1)
-            1 -> { probe.set(Calendar.DAY_OF_MONTH, 1); probe.add(Calendar.MONTH, 1) }
-            else -> { probe.set(Calendar.MONTH, 0); probe.set(Calendar.DAY_OF_MONTH, 1); probe.add(Calendar.YEAR, 1) }
-        }
-        next.alpha = if (probe.timeInMillis > System.currentTimeMillis()) 0.3f else 1f
-        val lbl = tile(stLabel(), false) { monthPickerDialog() }
-        lbl.letterSpacing = 0.1f
-        bar.addView(prev, LinearLayout.LayoutParams(dp(56), MATCH))
-        val ml = LinearLayout.LayoutParams(0, MATCH, 1f)
-        ml.setMargins(dp(6), 0, dp(6), 0)
-        bar.addView(lbl, ml)
-        bar.addView(next, LinearLayout.LayoutParams(dp(56), MATCH))
-        col.addView(bar, lpV(dp(64)))
-
-        // middle: Day / Month / Year  |  total + small stats
-        val mid = LinearLayout(this)
-        mid.orientation = LinearLayout.HORIZONTAL
-        val seg = LinearLayout(this)
-        seg.orientation = LinearLayout.VERTICAL
-        for ((i, n) in listOf("Day", "Month", "Year").withIndex()) {
-            seg.addView(tile(n, stMode == i) { stSetMode(i) }, lpV())
-        }
-        val right = LinearLayout(this)
-        right.orientation = LinearLayout.VERTICAL
-        val big = tile(twoLine(hm(total), if (total <= 0) "No focus yet \u00B7 start a session" else stThisPeriodWord()), true) {}
-        right.addView(big, lpV())
-
-        val days = stScopeDays()
-        val best = days.maxOrNull() ?: 0
-        val avg = if (days.isEmpty()) 0 else days.sum() / days.size
-        val small = LinearLayout(this)
-        small.orientation = LinearLayout.HORIZONTAL
-        val streak = stStreak()
-        val items = listOf(
-            statTile(if (streak == 1) "1 day" else "$streak days", "STREAK"),
-            statTile(hm(best), "BEST DAY"),
-            statTile(hm(avg), "AVG / DAY")
+        shakeAnim = a
+        performHapticFeedback(
+            if (android.os.Build.VERSION.SDK_INT >= 30) android.view.HapticFeedbackConstants.REJECT
+            else android.view.HapticFeedbackConstants.LONG_PRESS
         )
-        for (t in items) {
-            val lp = LinearLayout.LayoutParams(0, MATCH, 1f)
-            lp.setMargins(dp(3), 0, dp(3), 0)
-            small.addView(t, lp)
-        }
-        right.addView(small, lpV())
-
-        val sl = LinearLayout.LayoutParams(0, MATCH, 1f)
-        sl.setMargins(0, 0, dp(6), 0)
-        mid.addView(seg, sl)
-        mid.addView(right, LinearLayout.LayoutParams(0, MATCH, 3f))
-        col.addView(mid, LinearLayout.LayoutParams(MATCH, 0, 1f))
-
-        val foot = tile("Minutes are counted when a timer starts", false) {}
-        foot.textSize = 13f
-        col.addView(foot, lpV(dp(48)))
-        return col
     }
 
-    // ---------- Page 4: Detox (block doomscrolling) ----------
-    private val C_DXLEFT = Color.parseColor("#FCFAFA")
-    private val C_DXPANEL = Color.parseColor("#EBE6E6")
-    private val C_DXCARD = Color.parseColor("#F3EFEF")
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val sp = h / 110f
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = dens * 1.5f
+        paint.color = C_LINE
+        rect.set(dens, dens, w - dens, h - dens)
+        canvas.drawRoundRect(rect, w * 0.3f, w * 0.3f, paint)
 
-    private fun appLabel(pkg: String): String = allApps.firstOrNull { it.pkg == pkg }?.label ?: pkg
-
-    private fun detoxCard(title: String, pkg: String, on: Boolean, sub: String?, onLong: (() -> Unit)?, onClick: () -> Unit): View {
-        val card = LinearLayout(this)
-        card.orientation = LinearLayout.HORIZONTAL
-        card.gravity = Gravity.CENTER_VERTICAL
-        card.background = rounded(if (on) C_ORANGE else C_DXCARD, 26)
-        card.setPadding(dp(22), dp(10), dp(22), dp(10))
-        val iv = ImageView(this)
-        iv.setImageDrawable(icon(pkg))
-        card.addView(iv, LinearLayout.LayoutParams(dp(54), dp(54)))
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(18), 0, 0, 0)
-        val t = TextView(this)
-        t.text = title
-        t.textSize = 22f
-        t.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        t.setTextColor(if (on) Color.WHITE else C_TXT)
-        t.maxLines = 1
-        val st = TextView(this)
-        st.text = sub ?: (if (on) "BLOCKED" else "ALLOWED")
-        st.textSize = 12f
-        st.letterSpacing = 0.25f
-        st.setTextColor(if (on) Color.WHITE else C_DIMTXT)
-        col.addView(t)
-        col.addView(st)
-        card.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
-        card.setOnClickListener { onClick() }
-        if (onLong != null) {
-            card.setOnLongClickListener {
-                onLong()
-                true
-            }
+        val k = value
+        val cy = h / 2f
+        val first = Math.floor((k - 60f).toDouble()).toInt()
+        val last = Math.ceil((k + 60f).toDouble()).toInt()
+        for (i in first..last) {
+            if (i < 1 || i > 1440) continue
+            if (i % 5 != 0) continue // sirf har 5 min pe line, beech ki lines hata di
+            val y = cy + (i - k) * sp
+            if (y < h * 0.07f || y > h * 0.93f) continue
+            paint.strokeWidth = dens * (if (i % 15 == 0) 1.6f else 1.0f)
+            val half = w * (if (i % 60 == 0) 0.30f else if (i % 15 == 0) 0.22f else 0.12f)
+            canvas.drawLine(w / 2f - half, y, w / 2f + half, y, paint)
         }
-        card.setOnTouchListener { v, ev ->
-            when (ev.action) {
-                MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.98f).scaleY(0.98f).setDuration(90).start()
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
-            }
-            false
-        }
-        return card
+        paint.color = C_ORANGE
+        paint.strokeWidth = dens * 4f
+        canvas.drawLine(w * 0.27f, cy, w * 0.73f, cy, paint)
     }
 
-    // ScrollView aur list ek hi rehte hain, render() par sirf cards dobara bharte hain -> scroll position nahi hilti
-    private var dxSv: HalfScrollView? = null
-    private var dxList: LinearLayout? = null
-
-    private fun detoxPage(): View {
-        val col = vbox()
-        if (!accEnabled()) {
-            val b = tile("Accessibility OFF  \u00B7  tap to turn ON", false) {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.action) {
+            MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                lastY = e.y
+                limitHit = false
+                ignore = onBlocked?.invoke() == true
             }
-            b.textSize = 14f
-            b.setTextColor(Color.WHITE)
-            b.background = rounded(C_ORANGE, 16)
-            col.addView(b, lpV(dp(52)))
-        }
-
-        // header: Block Doomscrolling
-        val head = LinearLayout(this)
-        head.orientation = LinearLayout.HORIZONTAL
-        head.gravity = Gravity.CENTER_VERTICAL
-        head.background = rounded(C_DXPANEL, 24)
-        head.setPadding(dp(14), dp(6), dp(14), dp(6))
-        val hi = IconView(this, IconView.INFINITY)
-        hi.tint = Color.WHITE
-        hi.setPadding(dp(8), dp(8), dp(8), dp(8))
-        hi.background = rounded(C_ORANGE, 12)
-        head.addView(hi, LinearLayout.LayoutParams(dp(42), dp(42)))
-        val ht = TextView(this)
-        ht.text = "Block Doomscrolling"
-        ht.textSize = 22f
-        ht.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        ht.setTextColor(C_TXT)
-        ht.setPadding(dp(16), 0, 0, 0)
-        head.addView(ht, LinearLayout.LayoutParams(WRAP, WRAP))
-        val hl = LinearLayout.LayoutParams(MATCH, dp(60))
-        hl.bottomMargin = dp(8)
-        col.addView(head, hl)
-
-        // list of cards (2 visible, swipe up/down for more)
-        val sv = dxSv ?: HalfScrollView(this).also {
-            it.isVerticalScrollBarEnabled = false
-            dxSv = it
-        }
-        val list = dxList ?: LinearLayout(this).also {
-            it.orientation = LinearLayout.VERTICAL
-            dxList = it
-        }
-        list.removeAllViews()
-        fun addCard(v: View) {
-            val lp = LinearLayout.LayoutParams(MATCH, dp(200))
-            lp.setMargins(0, dp(6), 0, dp(6))
-            list.addView(v, lp)
-        }
-        if (installed("com.google.android.youtube")) {
-            addCard(detoxCard("YouTube Shorts", "com.google.android.youtube", Store.detoxShorts(this), null, { igDbgMenu("com.google.android.youtube") }) {
-                Store.setDetoxShorts(this, !Store.detoxShorts(this))
-                render()
-                updateLeft()
-            })
-        }
-        if (installed("com.instagram.android")) {
-            addCard(detoxCard("Instagram Reels", "com.instagram.android", Store.detoxReels(this), null, { igDbgMenu("com.instagram.android") }) {
-                Store.setDetoxReels(this, !Store.detoxReels(this))
-                render()
-                updateLeft()
-            })
-        }
-        val on = Store.detoxAppsOn(this)
-        val full = Store.detoxFull(this)
-        for (pkg in Store.detoxApps(this).sortedBy { appLabel(it).lowercase() }) {
-            val sub = when {
-                pkg !in on -> "ALLOWED"
-                pkg in full -> "FULL BLOCK"
-                else -> "REELS ONLY"
-            }
-            addCard(detoxCard(appLabel(pkg), pkg, pkg in on, sub, { detoxAppMenu(pkg) }) {
-                Store.setDetoxAppOn(this, pkg, pkg !in Store.detoxAppsOn(this))
-                render()
-                updateLeft()
-            })
-        }
-        (sv.parent as? android.view.ViewGroup)?.removeView(sv)
-        if (list.parent == null) sv.addView(list, FrameLayout.LayoutParams(MATCH, WRAP))
-        sv.fit()
-        val panel = LinearLayout(this)
-        panel.orientation = LinearLayout.VERTICAL
-        panel.background = rounded(C_DXPANEL, 28)
-        panel.setPadding(dp(8), dp(4), dp(8), dp(4))
-        panel.addView(sv, LinearLayout.LayoutParams(MATCH, MATCH))
-        col.addView(panel, LinearLayout.LayoutParams(MATCH, 0, 1f))
-
-        // Add Apps: tap ya right slide dono
-        val addRow = FrameLayout(this)
-        addRow.background = rounded(C_DXPANEL, 26)
-        val inner = LinearLayout(this)
-        inner.orientation = LinearLayout.HORIZONTAL
-        inner.gravity = Gravity.CENTER_VERTICAL
-        inner.setPadding(dp(12), dp(8), dp(18), dp(8))
-        val plus = IconView(this, IconView.PLUS)
-        plus.tint = C_TXT
-        plus.setPadding(dp(14), dp(14), dp(14), dp(14))
-        plus.background = rounded(Color.parseColor("#E0DAD9"), 16)
-        inner.addView(plus, LinearLayout.LayoutParams(dp(56), dp(56)))
-        val at = TextView(this)
-        at.text = "Add Apps"
-        at.textSize = 21f
-        at.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        at.setTextColor(C_TXT)
-        at.setPadding(dp(18), 0, 0, 0)
-        inner.addView(at, LinearLayout.LayoutParams(0, WRAP, 1f))
-        val ch = IconView(this, IconView.CHEVRON)
-        ch.tint = C_DIMTXT
-        inner.addView(ch, LinearLayout.LayoutParams(dp(24), dp(24)))
-        addRow.addView(inner, FrameLayout.LayoutParams(MATCH, MATCH))
-        var downX = 0f
-        var moved = false
-        addRow.setOnTouchListener { _, ev ->
-            when (ev.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = ev.rawX
-                    moved = false
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = ev.rawX - downX
-                    if (dx > dp(8)) {
-                        moved = true
-                        plus.translationX = dx.coerceIn(0f, (addRow.width - plus.width - dp(30)).toFloat())
+            MotionEvent.ACTION_MOVE -> {
+                if (!ignore) {
+                    val dy = e.y - lastY
+                    lastY = e.y
+                    val raw = value - dy / (height / 110f)
+                    if (raw < 1f || raw > 1440f) {
+                        if (!limitHit) { limitHit = true; shake() }
+                    } else {
+                        limitHit = false
+                    }
+                    value = raw.coerceIn(1f, 1440f)
+                    invalidate()
+                    val snapped = Math.round(value).coerceIn(1, 1440)
+                    if (snapped != reported) {
+                        reported = snapped
+                        onChange(snapped)
                     }
                 }
-                MotionEvent.ACTION_UP -> {
-                    val dx = ev.rawX - downX
-                    val doIt = if (moved) dx > addRow.width * 0.4f else true
-                    plus.animate().translationX(0f).setDuration(200).start()
-                    if (doIt) pickDetoxApp()
-                }
-                MotionEvent.ACTION_CANCEL -> plus.animate().translationX(0f).setDuration(200).start()
             }
-            true
         }
-        val al = LinearLayout.LayoutParams(MATCH, dp(76))
-        al.topMargin = dp(8)
-        col.addView(addRow, al)
+        return true
+    }
+}
 
-        // info
-        val info = LinearLayout(this)
-        info.orientation = LinearLayout.HORIZONTAL
-        info.gravity = Gravity.CENTER_VERTICAL
-        info.background = rounded(C_DXPANEL, 24)
-        info.setPadding(dp(20), 0, dp(16), 0)
-        val ii = IconView(this, IconView.INFO)
-        ii.tint = C_TXT
-        info.addView(ii, LinearLayout.LayoutParams(dp(26), dp(26)))
-        val itx = TextView(this)
-        itx.text = "Only Shorts & Reels are blocked. Everything else works normally."
-        itx.textSize = 14f
-        itx.setTextColor(C_TXT)
-        itx.setPadding(dp(14), 0, 0, 0)
-        info.addView(itx, LinearLayout.LayoutParams(0, WRAP, 1f))
-        val il = LinearLayout.LayoutParams(MATCH, dp(64))
-        il.topMargin = dp(8)
-        col.addView(info, il)
-        return col
+class SlideView(ctx: Context, private val onDone: () -> Unit) : View(ctx) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val path = Path()
+    private val rect = RectF()
+    private var knobX = 0f
+    private var dragging = false
+    private var back: ValueAnimator? = null
+
+    private fun snapBack() {
+        back?.cancel()
+        val a = ValueAnimator.ofFloat(knobX, 0f)
+        a.duration = 220
+        a.addUpdateListener {
+            knobX = it.animatedValue as Float
+            invalidate()
+        }
+        a.start()
+        back = a
     }
 
-    private fun igDbgMenu(pkg: String) {
-        AlertDialog.Builder(this)
-            .setTitle("Debug")
-            .setItems(arrayOf("Capture IDs (20 sec)", "Show captured IDs / last block")) { _, i ->
-                if (i == 0) {
-                    Store.dxDbgStart(this, pkg)
-                    Toast.makeText(this, "20 sec: app kholo aur wo page kholo (blocking band rahegi)", Toast.LENGTH_LONG).show()
-                } else {
-                    showCapturedIds()
-                }
-            }
-            .show()
+    override fun onDetachedFromWindow() {
+        back?.cancel()
+        super.onDetachedFromWindow()
     }
 
-    private fun detoxAppMenu(pkg: String) {
-        val name = appLabel(pkg)
-        AlertDialog.Builder(this)
-            .setTitle(name)
-            .setItems(
-                arrayOf(
-                    "Block only Reels / Shorts",
-                    "Block whole app",
-                    "Capture IDs (20 sec)",
-                    "Show captured IDs",
-                    "Remove app"
-                )
-            ) { _, i ->
-                when (i) {
-                    0 -> {
-                        Store.setDetoxFull(this, pkg, false)
-                        render()
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val kw = h * 1.25f
+        val r = h / 2f
+        val maxX = (w - kw).coerceAtLeast(1f)
+
+        paint.style = Paint.Style.FILL
+        paint.color = C_TILE
+        rect.set(0f, 0f, w, h)
+        canvas.drawRoundRect(rect, r, r, paint)
+
+        paint.color = C_TXT
+        paint.alpha = (255f * (1f - knobX / maxX)).toInt().coerceIn(30, 255)
+        paint.textSize = h * 0.30f
+        paint.textAlign = Paint.Align.CENTER
+        val base = h / 2f - (paint.ascent() + paint.descent()) / 2f
+        canvas.drawText("Slide to Start", (w + kw) / 2f, base, paint)
+        paint.alpha = 255
+
+        paint.color = C_DARK
+        rect.set(knobX, 0f, knobX + kw, h)
+        canvas.drawRoundRect(rect, r, r, paint)
+
+        val cx = knobX + kw / 2f
+        val cy = h / 2f
+        val s = h * 0.17f
+        paint.color = Color.WHITE
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = h * 0.07f
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeJoin = Paint.Join.ROUND
+        path.reset()
+        path.moveTo(cx - s * 0.5f, cy - s)
+        path.lineTo(cx + s * 0.5f, cy)
+        path.lineTo(cx - s * 0.5f, cy + s)
+        canvas.drawPath(path, paint)
+        paint.style = Paint.Style.FILL
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        val h = height.toFloat()
+        val kw = h * 1.25f
+        val maxX = width.toFloat() - kw
+        when (e.action) {
+            MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                back?.cancel()
+                dragging = e.x <= knobX + kw * 1.3f
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (dragging) {
+                    knobX = (e.x - kw / 2f).coerceIn(0f, maxX)
+                    invalidate()
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                val done = dragging && knobX >= maxX * 0.9f
+                dragging = false
+                snapBack()
+                if (done) onDone()
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                dragging = false
+                snapBack()
+            }
+        }
+        return true
+    }
+}
+
+/** Vertical on/off slider for a weekday (thumb on top = ON, bottom = OFF). */
+class DayToggleView(ctx: Context, on: Boolean, private val onToggle: (Boolean) -> Boolean) : View(ctx) {
+    private var pos = if (on) 0f else 1f
+    private var isOn = on
+    private var anim: ValueAnimator? = null
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rect = RectF()
+    private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
+    private var downY = 0f
+    private var moved = false
+
+    private fun go(to: Float) {
+        anim?.cancel()
+        val a = ValueAnimator.ofFloat(pos, to)
+        a.duration = 260
+        a.interpolator = DecelerateInterpolator()
+        a.addUpdateListener {
+            pos = it.animatedValue as Float
+            invalidate()
+        }
+        a.start()
+        anim = a
+    }
+
+    private fun setOn(v: Boolean) {
+        if (v == isOn) {
+            go(if (v) 0f else 1f)
+            return
+        }
+        if (onToggle(v)) {
+            isOn = v
+            go(if (v) 0f else 1f)
+        } else {
+            go(if (isOn) 0f else 1f)
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        anim?.cancel()
+        super.onDetachedFromWindow()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val rad = w * 0.28f
+        paint.style = Paint.Style.FILL
+        paint.color = C_TILE
+        rect.set(0f, 0f, w, h)
+        canvas.drawRoundRect(rect, rad, rad, paint)
+        val pad = w * 0.08f
+        val th = (h - pad * 2f) * 0.46f
+        val ty = pad + (h - pad * 2f - th) * pos
+        paint.color = blend(C_ORANGE, Color.parseColor("#8E8886"), pos)
+        rect.set(pad, ty, w - pad, ty + th)
+        canvas.drawRoundRect(rect, rad * 0.8f, rad * 0.8f, paint)
+    }
+
+    private fun blend(a: Int, b: Int, t: Float): Int {
+        val r = (Color.red(a) + (Color.red(b) - Color.red(a)) * t).toInt()
+        val g = (Color.green(a) + (Color.green(b) - Color.green(a)) * t).toInt()
+        val bl = (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * t).toInt()
+        return Color.rgb(r, g, bl)
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.action) {
+            MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                downY = e.y
+                moved = false
+                anim?.cancel()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (Math.abs(e.y - downY) > slop) moved = true
+                if (moved) {
+                    pos = (e.y / height).coerceIn(0f, 1f)
+                    invalidate()
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                if (moved) setOn(pos < 0.5f) else setOn(!isOn)
+            }
+            MotionEvent.ACTION_CANCEL -> go(if (isOn) 0f else 1f)
+        }
+        return true
+    }
+}
+
+/** Horizontal ruler for a time of day (0..1439, 5 min steps, wraps around). */
+class HRulerView(ctx: Context, startValue: Int, private val onChange: (Int) -> Unit) : View(ctx) {
+    var onBlocked: (() -> Boolean)? = null
+    private val dens = ctx.resources.displayMetrics.density
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rect = RectF()
+    private var value = startValue.toFloat()
+    private var reported = startValue
+    private var lastX = 0f
+    private var ignore = false
+    private var vt: VelocityTracker? = null
+    private var fling: ValueAnimator? = null
+
+    private fun pxPerMin() = width / 90f
+
+    fun setMinutes(m: Int) {
+        fling?.cancel()
+        value = m.toFloat()
+        reported = m
+        invalidate()
+    }
+
+    private fun report() {
+        val snapped = (Math.round(value / 5f) * 5).mod(1440)
+        if (snapped != reported) {
+            reported = snapped
+            onChange(snapped)
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        fling?.cancel()
+        super.onDetachedFromWindow()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = dens * 1.5f
+        paint.color = C_LINE
+        rect.set(dens, dens, w - dens, h - dens)
+        canvas.drawRoundRect(rect, h * 0.3f, h * 0.3f, paint)
+
+        val sp = pxPerMin() * 5f
+        val k = value / 5f
+        val cx = w / 2f
+        val n = (w / sp / 2f).toInt() + 2
+        val first = Math.floor((k - n).toDouble()).toInt()
+        val last = Math.ceil((k + n).toDouble()).toInt()
+        paint.strokeWidth = dens * 1.4f
+        for (i in first..last) {
+            val x = cx + (i - k) * sp
+            if (x < h * 0.25f || x > w - h * 0.25f) continue
+            val hr = (i.mod(288))
+            val half = h * (if (hr % 12 == 0) 0.26f else 0.17f)
+            canvas.drawLine(x, h / 2f - half, x, h / 2f + half, paint)
+        }
+        paint.color = C_ORANGE
+        paint.strokeWidth = dens * 3f
+        canvas.drawLine(cx, h * 0.04f, cx, h * 0.26f, paint)
+        canvas.drawLine(cx, h * 0.74f, cx, h * 0.96f, paint)
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.action) {
+            MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                fling?.cancel()
+                lastX = e.x
+                ignore = onBlocked?.invoke() == true
+                vt?.recycle()
+                vt = VelocityTracker.obtain()
+                vt?.addMovement(e)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                vt?.addMovement(e)
+                if (!ignore) {
+                    val dx = e.x - lastX
+                    lastX = e.x
+                    value = (value - dx / pxPerMin()).mod(1440f)
+                    invalidate()
+                    report()
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val t = vt
+                if (t != null && !ignore && e.action == MotionEvent.ACTION_UP) {
+                    t.computeCurrentVelocity(1000)
+                    val dMin = -t.xVelocity / pxPerMin() * 0.35f
+                    val from = value
+                    val a = ValueAnimator.ofFloat(0f, dMin)
+                    a.duration = 600
+                    a.interpolator = DecelerateInterpolator(2f)
+                    a.addUpdateListener {
+                        value = (from + (it.animatedValue as Float)).mod(1440f)
+                        invalidate()
+                        report()
                     }
-                    1 -> {
-                        Store.setDetoxFull(this, pkg, true)
-                        render()
-                    }
-                    2 -> {
-                        Store.dxDbgStart(this, pkg)
-                        Toast.makeText(this, "20 sec: ab $name kholo aur Reels/Spotlight screen pe jao", Toast.LENGTH_LONG).show()
-                    }
-                    3 -> showCapturedIds()
-                    else -> AlertDialog.Builder(this)
-                        .setTitle("Remove $name?")
-                        .setPositiveButton("Remove") { _, _ ->
-                            Store.removeDetoxApp(this, pkg)
-                            render()
-                            updateLeft()
+                    a.addListener(object : android.animation.AnimatorListenerAdapter() {
+                        override fun onAnimationEnd(animation: android.animation.Animator) {
+                            value = (Math.round(value / 5f) * 5f).mod(1440f)
+                            invalidate()
+                            report()
                         }
-                        .setNegativeButton("Cancel", null)
-                        .show()
+                    })
+                    a.start()
+                    fling = a
                 }
-            }
-            .show()
-    }
-
-    private fun showCapturedIds() {
-        val ids = Store.dxDbgIds(this)
-        val text = if (ids.isEmpty()) "Kuch capture nahi hua. Capture IDs dabake 20 sec ke andar app kholo." else ids.joinToString("\n")
-        val tv = TextView(this)
-        tv.text = text
-        tv.textSize = 12f
-        tv.setTextIsSelectable(true)
-        tv.setPadding(dp(20), dp(10), dp(20), dp(10))
-        val sc = ScrollView(this)
-        sc.addView(tv)
-        AlertDialog.Builder(this)
-            .setTitle("Captured IDs (${ids.size})")
-            .setView(sc)
-            .setPositiveButton("Copy") { _, _ ->
-                val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                cm.setPrimaryClip(android.content.ClipData.newPlainText("ids", text))
-                Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("Close", null)
-            .show()
-    }
-
-    private fun pickDetoxApp() {
-        val have = Store.detoxApps(this)
-        val base = allApps.filter {
-            it.pkg != packageName && it.pkg !in have &&
-                it.pkg != "com.google.android.youtube" && it.pkg != "com.instagram.android"
-        }
-        var shown: List<App> = base
-        var dlg: AlertDialog? = null
-
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(12), dp(8), dp(12), 0)
-        val search = EditText(this)
-        search.hint = "Search app"
-        search.isSingleLine = true
-        col.addView(search)
-        val lv = ListView(this)
-        val ad = object : BaseAdapter() {
-            override fun getCount() = shown.size
-            override fun getItem(i: Int): Any = shown[i]
-            override fun getItemId(i: Int) = i.toLong()
-            override fun getView(i: Int, v: View?, parent: ViewGroup?): View {
-                val a = shown[i]
-                val row = (v as? LinearLayout) ?: LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(8), dp(6), dp(8), dp(6))
-                    addView(ImageView(this@MainActivity), LinearLayout.LayoutParams(dp(40), dp(40)))
-                    val tv = TextView(this@MainActivity)
-                    tv.textSize = 16f
-                    tv.setPadding(dp(12), 0, dp(8), 0)
-                    addView(tv, LinearLayout.LayoutParams(0, WRAP, 1f))
-                }
-                (row.getChildAt(0) as ImageView).setImageDrawable(icon(a.pkg))
-                (row.getChildAt(1) as TextView).text = a.label
-                return row
+                t?.recycle()
+                vt = null
             }
         }
-        lv.adapter = ad
-        lv.setOnItemClickListener { _, _, i, _ ->
-            Store.addDetoxApp(this, shown[i].pkg)
-            dlg?.dismiss()
-            render()
-            updateLeft()
+        return true
+    }
+}
+
+/** Detox illustration: phone with a crossed-out clapperboard (pixel-assemble animation supported). */
+class DetoxArtView(ctx: Context) : AssembleView(ctx) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rect = RectF()
+    private val path = Path()
+
+    override fun drawContent(canvas: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val ph = minOf(h * 0.82f, w * 0.95f)
+        val pw = ph * 0.56f
+        val cx = w / 2f
+        val top = h * 0.12f
+        val cy = top + ph / 2f
+
+        // soft blob + floor shadow
+        paint.style = Paint.Style.FILL
+        paint.color = Color.parseColor("#EEE9E8")
+        rect.set(cx - pw * 1.45f, top + ph * 0.34f, cx + pw * 1.05f, top + ph * 0.96f)
+        canvas.drawOval(rect, paint)
+        paint.color = Color.parseColor("#E4DEDD")
+        rect.set(cx - pw * 0.85f, top + ph * 0.985f, cx + pw * 0.85f, top + ph * 1.045f)
+        canvas.drawOval(rect, paint)
+
+        // phone
+        val sw = pw * 0.075f
+        rect.set(cx - pw / 2f, top, cx + pw / 2f, top + ph)
+        paint.color = Color.parseColor("#FCFAFA")
+        canvas.drawRoundRect(rect, pw * 0.2f, pw * 0.2f, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = sw
+        paint.color = Color.parseColor("#171515")
+        canvas.drawRoundRect(rect, pw * 0.2f, pw * 0.2f, paint)
+        paint.style = Paint.Style.FILL
+        canvas.drawCircle(cx, top + ph * 0.075f, pw * 0.032f, paint)
+
+        // sparks (top right)
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = pw * 0.06f
+        paint.color = C_ORANGE
+        val ox = cx + pw * 0.62f
+        val oy = top + ph * 0.02f
+        val angles = floatArrayOf(-78f, -48f, -18f)
+        for (a in angles) {
+            val r = Math.toRadians(a.toDouble())
+            val c0 = Math.cos(r).toFloat()
+            val s0 = Math.sin(r).toFloat()
+            canvas.drawLine(ox + c0 * pw * 0.20f, oy + s0 * pw * 0.20f, ox + c0 * pw * 0.42f, oy + s0 * pw * 0.42f, paint)
         }
-        search.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) {
-                val q = s?.toString() ?: ""
-                shown = if (q.isBlank()) base else base.filter { it.label.contains(q, ignoreCase = true) }
-                ad.notifyDataSetChanged()
-            }
-            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
-            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
-        })
-        col.addView(lv, LinearLayout.LayoutParams(MATCH, dp(360)))
-        dlg = AlertDialog.Builder(this)
-            .setTitle("Add app to Detox")
-            .setView(col)
-            .setNegativeButton("Cancel", null)
-            .create()
-        dlg?.show()
-    }
 
-    // ---------- Focus (black) screen ----------
-    private var doneShown = false
-
-    private fun syncFocus() {
-        val on = Store.sessionOn(this)
-        if (on && focus == null && !doneShown) {
-            enterFocus()
-        } else if (!on && focus != null) {
-            // timer khud poora hua (until > 0) -> DONE screen; manual exit (until = 0) -> seedha wapas
-            if (Store.until(this) > 0L) showDone() else exitFocus()
+        // clapperboard
+        val cw = pw * 0.66f
+        val ch = cw * 0.78f
+        val l = cx - cw / 2f
+        val r = cx + cw / 2f
+        val t = cy - ch / 2f
+        val b = cy + ch / 2f
+        paint.style = Paint.Style.FILL
+        paint.color = Color.parseColor("#3A3837")
+        rect.set(l, t + ch * 0.26f, r, b)
+        canvas.drawRoundRect(rect, cw * 0.1f, cw * 0.1f, paint)
+        rect.set(l, t, r, t + ch * 0.27f)
+        canvas.drawRoundRect(rect, cw * 0.07f, cw * 0.07f, paint)
+        paint.color = Color.parseColor("#F2F2F2")
+        val sx = cw * 0.12f
+        for (i in 0..2) {
+            val x0 = l + cw * 0.10f + i * cw * 0.30f
+            path.reset()
+            path.moveTo(x0, t + ch * 0.22f)
+            path.lineTo(x0 + sx, t + ch * 0.05f)
+            path.lineTo(x0 + sx + cw * 0.14f, t + ch * 0.05f)
+            path.lineTo(x0 + cw * 0.14f, t + ch * 0.22f)
+            path.close()
+            canvas.drawPath(path, paint)
         }
-    }
+        // play triangle
+        paint.color = Color.parseColor("#EDEDED")
+        val ts = cw * 0.17f
+        path.reset()
+        path.moveTo(cx - ts * 0.6f, cy + ch * 0.08f - ts)
+        path.lineTo(cx + ts, cy + ch * 0.08f)
+        path.lineTo(cx - ts * 0.6f, cy + ch * 0.08f + ts)
+        path.close()
+        canvas.drawPath(path, paint)
 
-    private fun showDone() {
-        val f = focus
-        focus = null
-        f?.release()
-        Ambient.stop()
-        doneShown = true
-        val now = Calendar.getInstance()
-        val todayMin = Store.dayMinutes(this, now.get(Calendar.YEAR), now.get(Calendar.MONTH), now.get(Calendar.DAY_OF_MONTH)).toInt()
-        val dow = (now.get(Calendar.DAY_OF_WEEK) + 5) % 7   // Mon = 0 ... Sun = 6
-        val week = IntArray(7) { i ->
-            val c = now.clone() as Calendar
-            c.add(Calendar.DAY_OF_YEAR, i - dow)
-            Store.dayMinutes(this, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).toInt()
-        }
-        val ds = DoneScreen(this, Store.sessionMinutes(this), todayMin, stStreak(), week, dow) {
-            doneShown = false
-            Store.stopSession(this)
-            exitFocus()
-        }
-        val lp = window.attributes
-        lp.screenBrightness = 0.3f
-        window.attributes = lp
-        window.decorView.systemUiVisibility = 0
-        setContentView(ds.view)
+        // slash
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        val x1 = l - cw * 0.04f
+        val y1 = b + ch * 0.04f
+        val x2 = r + cw * 0.02f
+        val y2 = t - ch * 0.05f
+        paint.strokeWidth = pw * 0.15f
+        paint.color = Color.parseColor("#FCFAFA")
+        canvas.drawLine(x1, y1, x2, y2, paint)
+        paint.strokeWidth = pw * 0.075f
+        paint.color = C_ORANGE
+        canvas.drawLine(x1, y1, x2, y2, paint)
     }
+}
 
-    override fun onUserInteraction() {
-        super.onUserInteraction()
-        focus?.poke()
-    }
-
-    private fun enterFocus() {
-        val f = FocusScreen(this) { syncFocus() }
-        focus = f
-        window.statusBarColor = Color.BLACK
-        window.navigationBarColor = Color.BLACK
-        window.decorView.systemUiVisibility = 0
-        val lp = window.attributes
-        lp.screenBrightness = 0.08f
-        window.attributes = lp
-        setContentView(f.view)
-        f.update()
-    }
-
-    private fun exitFocus() {
-        focus?.release()
-        focus = null
-        Ambient.stop()
-        val lp = window.attributes
-        lp.screenBrightness = -1f
-        window.attributes = lp
-        window.statusBarColor = origStatus
-        window.navigationBarColor = origNav
-        window.decorView.systemUiVisibility = origUi
-        setContentView(normalRoot)
-        lastRunning = Store.active(this)
-        render()
-        updateLeft()
-        styleRail()
-    }
-
-    // ---------- Lifecycle ----------
-    private val tick = object : Runnable {
+/** Rotating quotes: auto-swipe every 5s, user can swipe too. Dots show the position. */
+class QuoteView(ctx: Context) : View(ctx) {
+    private val quotes = arrayOf(
+        "Own Your Mind," to "Leave Scrolls Behind.",
+        "Less Feed," to "More Deed.",
+        "Don't Just Scroll," to "Take Control.",
+        "Feed Your Mind," to "Not the Grind."
+    )
+    private val dens = ctx.resources.displayMetrics.density
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var idx = 0
+    private var t = 1f
+    private var from = 0
+    private var dir = 1
+    private var anim: ValueAnimator? = null
+    private var size = 40f
+    private var downX = 0f
+    private val auto = object : Runnable {
         override fun run() {
-            syncFocus()
-            Notif.syncSession(this@MainActivity)
-            val f = focus
-            if (f != null) {
-                f.update()
-            } else {
-                val r = Store.active(this@MainActivity)
-                if (r != lastRunning) {
-                    lastRunning = r
-                    render()
-                }
-                updateLeft()
-            }
-            ui.postDelayed(this, 1000)
+            if (isShown) go(1)
+            postDelayed(this, 5000L)
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        Notif.cancelSetup(this)
-        Notif.syncSession(this)
-        lastRunning = Store.active(this)
-        render()
-        updateLeft()
-        styleRail()
-        syncFocus()
-        ui.removeCallbacks(tick)
-        ui.postDelayed(tick, 1000)
+    init {
+        paint.typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
+        paint.textAlign = Paint.Align.CENTER
     }
 
-    override fun onDestroy() {
-        Ambient.stop()
-        super.onDestroy()
+    private fun go(d: Int) {
+        val n = quotes.size
+        from = idx
+        idx = (idx + d + n) % n
+        dir = d
+        anim?.cancel()
+        t = 0f
+        val a = ValueAnimator.ofFloat(0f, 1f)
+        a.duration = 450
+        a.interpolator = DecelerateInterpolator(1.8f)
+        a.addUpdateListener {
+            t = it.animatedValue as Float
+            invalidate()
+        }
+        a.start()
+        anim = a
     }
 
-    override fun onPause() {
-        super.onPause()
-        if (!accEnabled()) Notif.showAccessibilityNeeded(this)
-        ui.removeCallbacks(tick)
+    private fun restart() {
+        removeCallbacks(auto)
+        postDelayed(auto, 5000L)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        postDelayed(auto, 5000L)
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(auto)
+        anim?.cancel()
+        super.onDetachedFromWindow()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        super.onSizeChanged(w, h, ow, oh)
+        var sz = minOf(w * 0.11f, h * 0.27f)
+        paint.textSize = sz
+        var widest = 0f
+        for (q in quotes) widest = maxOf(widest, paint.measureText(q.first), paint.measureText(q.second))
+        if (widest > w * 0.92f) sz *= (w * 0.92f) / widest
+        size = sz
+    }
+
+    private fun drawQuote(c: Canvas, i: Int, dx: Float, alpha: Int) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        paint.textSize = size
+        val y1 = h * 0.34f
+        paint.color = Color.argb(alpha, 17, 17, 17)
+        c.drawText(quotes[i].first, w / 2f + dx, y1, paint)
+        paint.color = Color.argb(alpha, Color.red(C_ORANGE), Color.green(C_ORANGE), Color.blue(C_ORANGE))
+        c.drawText(quotes[i].second, w / 2f + dx, y1 + size * 1.15f, paint)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        if (t < 1f) {
+            drawQuote(canvas, from, -dir * t * w * 0.6f, ((1f - t) * 255).toInt())
+            drawQuote(canvas, idx, dir * (1f - t) * w * 0.6f, (t * 255).toInt())
+        } else {
+            drawQuote(canvas, idx, 0f, 255)
+        }
+        val r = dens * 5f
+        val gap = dens * 14f
+        val total = (quotes.size - 1) * gap
+        for (i in quotes.indices) {
+            paint.color = if (i == idx) C_ORANGE else Color.parseColor("#DDD7D6")
+            canvas.drawCircle(w / 2f - total / 2f + i * gap, h - dens * 14f, r, paint)
+        }
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.action) {
+            MotionEvent.ACTION_DOWN -> downX = e.x
+            MotionEvent.ACTION_UP -> {
+                val dx = e.x - downX
+                if (Math.abs(dx) > dens * 40f) {
+                    go(if (dx < 0) 1 else -1)
+                    restart()
+                }
+            }
+        }
+        return true
+    }
+}
+
+/** ScrollView whose children are exactly half its height, so 2 cards show and more can be swiped. */
+class HalfScrollView(ctx: Context) : android.widget.ScrollView(ctx) {
+    private val m = (12 * ctx.resources.displayMetrics.density).toInt()
+
+    private var pendingY = -1
+
+    /** Cards ki height abhi ke size ke hisaab se set karo (list dobara bharne ke baad). */
+    fun fit() {
+        if (height <= 0) return
+        val c = getChildAt(0) as? android.widget.LinearLayout ?: return
+        for (i in 0 until c.childCount) {
+            val v = c.getChildAt(i)
+            val lp = v.layoutParams as android.widget.LinearLayout.LayoutParams
+            lp.height = (height / 2 - m).coerceAtLeast(40)
+            v.layoutParams = lp
+        }
+    }
+
+    /** render() page dobara banata hai; naye view me purani scroll position wapas laao. */
+    fun restoreScroll(y: Int) { pendingY = y }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        super.onLayout(changed, l, t, r, b)
+        if (pendingY >= 0 && height > 0) {
+            val first = (getChildAt(0) as? android.widget.LinearLayout)?.getChildAt(0)
+            val want = (height / 2 - m).coerceAtLeast(40)
+            // cards ki height set hone ke baad hi scroll karo, warna clamp ho jata hai
+            if (first != null && first.height == want) {
+                val y = pendingY
+                pendingY = -1
+                scrollTo(0, y)
+            }
+        }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        super.onSizeChanged(w, h, ow, oh)
+        val c = getChildAt(0) as? android.widget.LinearLayout ?: return
+        for (i in 0 until c.childCount) {
+            val v = c.getChildAt(i)
+            val lp = v.layoutParams as android.widget.LinearLayout.LayoutParams
+            lp.height = (h / 2 - m).coerceAtLeast(40)
+            v.layoutParams = lp
+        }
     }
 }
