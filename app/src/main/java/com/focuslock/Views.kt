@@ -21,14 +21,19 @@ import android.view.animation.DecelerateInterpolator
 import java.util.Random
 import android.view.View
 
-val C_ORANGE = Color.parseColor("#FF6A0A")
-val C_GRAY = Color.parseColor("#B5AEAC")
-val C_TILE = Color.parseColor("#EBE6E6")
-val C_DARK = Color.parseColor("#403B39")
-val C_BG = Color.parseColor("#F6F3F3")
-val C_TXT = Color.parseColor("#2E2927")
-val C_CARD = Color.parseColor("#FCFAFA")
-val C_LINE = Color.parseColor("#C9C2C0")
+var C_ORANGE = Color.parseColor("#FF6A0A")
+var C_GRAY = Color.parseColor("#B5AEAC")
+var C_TILE = Color.parseColor("#EBE6E6")
+var C_DARK = Color.parseColor("#403B39")
+var C_BG = Color.parseColor("#F6F3F3")
+var C_TXT = Color.parseColor("#2E2927")
+var C_CARD = Color.parseColor("#FCFAFA")
+var C_LINE = Color.parseColor("#C9C2C0")
+// theme extras: filled controls (play, selected tile), soft accent shades
+var C_PRIMARY = Color.parseColor("#403B39")
+var C_SOFT = Color.parseColor("#F2B89C")
+var C_L1 = C_L1
+var C_L2 = C_L2
 
 // ---------- Custom views ----------
 
@@ -531,12 +536,12 @@ class DotsView(ctx: Context) : View(ctx) {
         val lv = levels
         for (i in 0 until total) {
             paint.color = when {
-                i == selected -> C_DARK
+                i == selected -> C_PRIMARY
                 lv != null && i >= futureFrom -> Color.parseColor("#F1EDED")
                 lv != null -> when (lv.getOrElse(i) { 0 }) {
                     0 -> C_TILE
-                    1 -> Color.parseColor("#F7C4A5")
-                    2 -> Color.parseColor("#FA9A5C")
+                    1 -> C_L1
+                    2 -> C_L2
                     else -> C_ORANGE
                 }
                 (if (mk != null) (i < mk.size && mk[i]) else i < filled) -> C_ORANGE
@@ -803,7 +808,7 @@ class SlideView(ctx: Context, private val onDone: () -> Unit) : View(ctx) {
         canvas.drawText("Slide to Start", (w + kw) / 2f, base, paint)
         paint.alpha = 255
 
-        paint.color = C_DARK
+        paint.color = C_PRIMARY
         rect.set(knobX, 0f, knobX + kw, h)
         canvas.drawRoundRect(rect, r, r, paint)
 
