@@ -415,7 +415,7 @@ class MainActivity : Activity() {
         content.addView(bagsView, LinearLayout.LayoutParams(MATCH, 0, 1f))
         content.addView(detoxBox, LinearLayout.LayoutParams(MATCH, 0, 1f))
         content.addView(controls, LinearLayout.LayoutParams(MATCH, WRAP))
-        content.addView(dots, LinearLayout.LayoutParams(MATCH, dp(16)))
+        content.addView(dots, LinearLayout.LayoutParams(MATCH, dp(30)))
         val capLp = LinearLayout.LayoutParams(MATCH, WRAP)
         capLp.topMargin = dp(10)
         content.addView(caption, capLp)
@@ -592,17 +592,7 @@ class MainActivity : Activity() {
             }
             4 -> {
             }
-            else -> {
-                val cal = Calendar.getInstance()
-                val y = cal.get(Calendar.YEAR)
-                val m = cal.get(Calendar.MONTH)
-                val n = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
-                pc.show(monthTotal(), C_ORANGE)
-                dots.total = n
-                dots.marks = BooleanArray(n) { i -> Store.dayMinutes(this, y, m, i + 1) > 0L }
-                dots.invalidate()
-                caption.text = "THIS MONTH  \u00B7  HH:MM"
-            }
+            else -> updateStatsLeft()
         }
     }
 
@@ -1318,16 +1308,319 @@ class MainActivity : Activity() {
     }
 
     // ---------- Page 3: Stats ----------
+    private var stMode = 1                       // 0 = Day, 1 = Month, 2 = Year
+    private var stCal: Calendar = Calendar.getInstance()
+
+    private fun hm(min: Int): String = if (min >= 60) "${min / 60}h ${min % 60}m" else "${min}m"
+
+    private fun monthSum(y: Int, m: Int): Int {
+        val c = Calendar.getInstance()
+        c.clear()
+        c.set(y, m, 1)
+        var sum = 0L
+        for (d in 1..c.getActualMaximum(Calendar.DAY_OF_MONTH)) sum += Store.dayMinutes(this, y, m, d)
+        return sum.toInt()
+    }
+
+    private fun yearSum(y: Int): Int {
+        var sum = 0
+        for (m in 0..11) sum += monthSum(y, m)
+        return sum
+    }
+
+    private fun stTotal(): Int {
+        val y = stCal.get(Calendar.YEAR)
+        val m = stCal.get(Calendar.MONTH)
+        return when (stMode) {
+            0 -> Store.dayMinutes(this, y, m, stCal.get(Calendar.DAY_OF_MONTH)).toInt()
+            1 -> monthSum(y, m)
+            else -> yearSum(y)
+        }
+    }
+
+    private fun stLabel(): String = when (stMode) {
+        0 -> SimpleDateFormat("EEEE d MMM yyyy", Locale.getDefault()).format(stCal.time).uppercase()
+        1 -> SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(stCal.time).uppercase()
+        else -> stCal.get(Calendar.YEAR).toString()
+    }
+
+    private fun stThisPeriodWord(): String {
+        val now = Calendar.getInstance()
+        val y = stCal.get(Calendar.YEAR)
+        val m = stCal.get(Calendar.MONTH)
+        return when (stMode) {
+            0 -> if (y == now.get(Calendar.YEAR) && stCal.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)) "TODAY" else "THAT DAY"
+            1 -> if (y == now.get(Calendar.YEAR) && m == now.get(Calendar.MONTH)) "THIS MONTH" else "THAT MONTH"
+            else -> if (y == now.get(Calendar.YEAR)) "THIS YEAR" else "THAT YEAR"
+        }
+    }
+
+    /** Days (up to today) of the scope: Day -> its month, Month -> month, Year -> year. */
+    private fun stScopeDays(): List<Int> {
+        val now = Calendar.getInstance()
+        val y = stCal.get(Calendar.YEAR)
+        val out = ArrayList<Int>()
+        val months = if (stMode == 2) 0..11 else stCal.get(Calendar.MONTH)..stCal.get(Calendar.MONTH)
+        for (m in months) {
+            val c = Calendar.getInstance()
+            c.clear()
+            c.set(y, m, 1)
+            for (d in 1..c.getActualMaximum(Calendar.DAY_OF_MONTH)) {
+                c.set(y, m, d)
+                if (c.timeInMillis > now.timeInMillis) break
+                out.add(Store.dayMinutes(this, y, m, d).toInt())
+            }
+        }
+        return out
+    }
+
+    private fun stStreak(): Int {
+        val c = Calendar.getInstance()
+        if (Store.dayMinutes(this, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)) <= 0L) {
+            c.add(Calendar.DAY_OF_YEAR, -1)   // aaj abhi 0 hai to kal se gino
+        }
+        var n = 0
+        while (n < 3650 && Store.dayMinutes(this, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)) > 0L) {
+            n++
+            c.add(Calendar.DAY_OF_YEAR, -1)
+        }
+        return n
+    }
+
+    private fun stShift(dir: Int) {
+        val c = stCal.clone() as Calendar
+        when (stMode) {
+            0 -> c.add(Calendar.DAY_OF_YEAR, dir)
+            1 -> { c.set(Calendar.DAY_OF_MONTH, 1); c.add(Calendar.MONTH, dir) }
+            else -> { c.set(Calendar.MONTH, 0); c.set(Calendar.DAY_OF_MONTH, 1); c.add(Calendar.YEAR, dir) }
+        }
+        if (c.timeInMillis > System.currentTimeMillis()) return
+        stCal = c
+        refreshStats()
+    }
+
+    private fun stSetMode(m: Int) {
+        val now = Calendar.getInstance()
+        val sameMonth = stCal.get(Calendar.YEAR) == now.get(Calendar.YEAR) && stCal.get(Calendar.MONTH) == now.get(Calendar.MONTH)
+        val sameYear = stCal.get(Calendar.YEAR) == now.get(Calendar.YEAR)
+        if ((m != 2 && sameMonth) || (m == 2 && sameYear)) stCal = now
+        stMode = m
+        refreshStats()
+    }
+
+    private fun refreshStats() {
+        if (tab != 3) return
+        host.removeAllViews()
+        host.addView(statsPage(), FrameLayout.LayoutParams(MATCH, MATCH))
+        updateLeft()
+    }
+
+    /** Left card: big digits = period total, squares = days (or months in Year mode), tap to drill down. */
+    private fun updateStatsLeft() {
+        val now = Calendar.getInstance()
+        val y = stCal.get(Calendar.YEAR)
+        val m = stCal.get(Calendar.MONTH)
+        val total = stTotal()
+        pc.show(total, C_ORANGE)
+
+        val vals: IntArray
+        var future = Int.MAX_VALUE
+        var sel: Int
+        if (stMode == 2) {
+            vals = IntArray(12) { monthSum(y, it) }
+            if (y == now.get(Calendar.YEAR)) future = now.get(Calendar.MONTH) + 1
+            sel = m
+        } else {
+            val c = Calendar.getInstance()
+            c.clear()
+            c.set(y, m, 1)
+            val n = c.getActualMaximum(Calendar.DAY_OF_MONTH)
+            vals = IntArray(n) { Store.dayMinutes(this, y, m, it + 1).toInt() }
+            if (y == now.get(Calendar.YEAR) && m == now.get(Calendar.MONTH)) future = now.get(Calendar.DAY_OF_MONTH)
+            sel = if (stMode == 0) stCal.get(Calendar.DAY_OF_MONTH) - 1 else -1
+        }
+        val mx = vals.maxOrNull() ?: 0
+        dots.total = vals.size
+        dots.levels = IntArray(vals.size) { i ->
+            if (mx <= 0 || vals[i] <= 0) 0 else Math.ceil(3.0 * vals[i] / mx).toInt().coerceIn(1, 3)
+        }
+        dots.futureFrom = future
+        dots.selected = sel
+        dots.onPick = { i ->
+            if (stMode == 2) {
+                stCal = Calendar.getInstance().also { it.clear(); it.set(y, i, 1) }
+                if (y == now.get(Calendar.YEAR) && i == now.get(Calendar.MONTH)) stCal = Calendar.getInstance()
+                stMode = 1
+            } else {
+                stCal = Calendar.getInstance().also { it.clear(); it.set(y, m, i + 1, 0, 0) }
+                stMode = 0
+            }
+            refreshStats()
+        }
+        dots.invalidate()
+        caption.text = stLabel() + "  \u00B7  " + (if (total <= 0) "NO FOCUS YET" else "HH:MM")
+    }
+
+    private fun statTile(top: String, bottom: String): TextView {
+        val sb = SpannableStringBuilder()
+        sb.append(top)
+        sb.setSpan(AbsoluteSizeSpan(22, true), 0, top.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        sb.setSpan(StyleSpan(Typeface.BOLD), 0, top.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        sb.append("\n").append(bottom)
+        val t = tile(sb, false) {}
+        t.textSize = 11f
+        t.letterSpacing = 0.08f
+        return t
+    }
+
+    private fun monthPickerDialog() {
+        val now = Calendar.getInstance()
+        val root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.gravity = Gravity.CENTER_HORIZONTAL
+        root.setPadding(dp(22), dp(20), dp(22), dp(18))
+        root.background = rounded(Color.parseColor("#F6F2F1"), 28)
+        val title = TextView(this)
+        title.text = "Pick month"
+        title.textSize = 18f
+        title.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        title.setTextColor(C_DARK)
+        root.addView(title, LinearLayout.LayoutParams(WRAP, WRAP))
+
+        val minY = now.get(Calendar.YEAR) - 5
+        val py = android.widget.NumberPicker(this)
+        py.minValue = minY
+        py.maxValue = now.get(Calendar.YEAR)
+        py.value = stCal.get(Calendar.YEAR).coerceIn(minY, now.get(Calendar.YEAR))
+        py.wrapSelectorWheel = false
+        val names = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+        val pmo = android.widget.NumberPicker(this)
+        pmo.minValue = 0
+        pmo.maxValue = 11
+        pmo.displayedValues = names
+        pmo.value = stCal.get(Calendar.MONTH)
+        pmo.wrapSelectorWheel = false
+        py.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        pmo.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER
+        row.addView(pmo, LinearLayout.LayoutParams(dp(100), dp(130)))
+        val gap = View(this)
+        row.addView(gap, LinearLayout.LayoutParams(dp(20), 1))
+        row.addView(py, LinearLayout.LayoutParams(dp(110), dp(130)))
+        val rLp = LinearLayout.LayoutParams(WRAP, WRAP)
+        rLp.topMargin = dp(10)
+        root.addView(row, rLp)
+
+        val dlg = AlertDialog.Builder(this).setView(root).create()
+        val btns = LinearLayout(this)
+        btns.gravity = Gravity.CENTER
+        val cancel = TextView(this)
+        cancel.text = "Cancel"
+        cancel.textSize = 15f
+        cancel.setTextColor(C_DARK)
+        cancel.gravity = Gravity.CENTER
+        cancel.background = rounded(C_TILE, 24)
+        cancel.setOnClickListener { dlg.dismiss() }
+        val ok = TextView(this)
+        ok.text = "Go"
+        ok.textSize = 15f
+        ok.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        ok.setTextColor(Color.WHITE)
+        ok.gravity = Gravity.CENTER
+        ok.background = rounded(C_DARK, 24)
+        ok.setOnClickListener {
+            val c = Calendar.getInstance()
+            c.clear()
+            c.set(py.value, pmo.value, 1, 0, 0)
+            if (c.timeInMillis > System.currentTimeMillis()) {
+                toast("That month hasn't started yet")
+            } else {
+                stCal = if (py.value == now.get(Calendar.YEAR) && pmo.value == now.get(Calendar.MONTH)) Calendar.getInstance() else c
+                if (stMode == 0) stMode = 1
+                dlg.dismiss()
+                refreshStats()
+            }
+        }
+        val b1 = LinearLayout.LayoutParams(dp(110), dp(48))
+        b1.rightMargin = dp(8)
+        btns.addView(cancel, b1)
+        btns.addView(ok, LinearLayout.LayoutParams(dp(130), dp(48)))
+        val bLp = LinearLayout.LayoutParams(WRAP, WRAP)
+        bLp.topMargin = dp(14)
+        root.addView(btns, bLp)
+        dlg.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        dlg.show()
+    }
+
     private fun statsPage(): View {
         val col = vbox()
-        val cal = Calendar.getInstance()
-        val today = Store.dayMinutes(this, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH))
-        val month = monthTotal()
-        val label = SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(cal.time).uppercase()
-        col.addView(tile(label, false) {}, lpV(dp(64)))
-        col.addView(tile("TODAY\n$today min", false) {}, lpV())
-        col.addView(tile("THIS MONTH\n${month / 60}h ${month % 60}m", true) {}, lpV())
-        col.addView(tile("Minutes are counted when a timer starts", false) {}, lpV(dp(64)))
+        val total = stTotal()
+
+        // top bar:  <  NOVEMBER 2026  >
+        val bar = LinearLayout(this)
+        bar.orientation = LinearLayout.HORIZONTAL
+        val prev = tile("\u2039", false) { stShift(-1) }
+        prev.textSize = 28f
+        val next = tile("\u203A", false) { stShift(1) }
+        next.textSize = 28f
+        val probe = stCal.clone() as Calendar
+        when (stMode) {
+            0 -> probe.add(Calendar.DAY_OF_YEAR, 1)
+            1 -> { probe.set(Calendar.DAY_OF_MONTH, 1); probe.add(Calendar.MONTH, 1) }
+            else -> { probe.set(Calendar.MONTH, 0); probe.set(Calendar.DAY_OF_MONTH, 1); probe.add(Calendar.YEAR, 1) }
+        }
+        next.alpha = if (probe.timeInMillis > System.currentTimeMillis()) 0.3f else 1f
+        val lbl = tile(stLabel(), false) { monthPickerDialog() }
+        lbl.letterSpacing = 0.1f
+        bar.addView(prev, LinearLayout.LayoutParams(dp(56), MATCH))
+        val ml = LinearLayout.LayoutParams(0, MATCH, 1f)
+        ml.setMargins(dp(6), 0, dp(6), 0)
+        bar.addView(lbl, ml)
+        bar.addView(next, LinearLayout.LayoutParams(dp(56), MATCH))
+        col.addView(bar, lpV(dp(64)))
+
+        // middle: Day / Month / Year  |  total + small stats
+        val mid = LinearLayout(this)
+        mid.orientation = LinearLayout.HORIZONTAL
+        val seg = LinearLayout(this)
+        seg.orientation = LinearLayout.VERTICAL
+        for ((i, n) in listOf("Day", "Month", "Year").withIndex()) {
+            seg.addView(tile(n, stMode == i) { stSetMode(i) }, lpV())
+        }
+        val right = LinearLayout(this)
+        right.orientation = LinearLayout.VERTICAL
+        val big = tile(twoLine(hm(total), if (total <= 0) "No focus yet \u00B7 start a session" else stThisPeriodWord()), true) {}
+        right.addView(big, lpV())
+
+        val days = stScopeDays()
+        val best = days.maxOrNull() ?: 0
+        val avg = if (days.isEmpty()) 0 else days.sum() / days.size
+        val small = LinearLayout(this)
+        small.orientation = LinearLayout.HORIZONTAL
+        val streak = stStreak()
+        val items = listOf(
+            statTile(if (streak == 1) "1 day" else "$streak days", "STREAK"),
+            statTile(hm(best), "BEST DAY"),
+            statTile(hm(avg), "AVG / DAY")
+        )
+        for (t in items) {
+            val lp = LinearLayout.LayoutParams(0, MATCH, 1f)
+            lp.setMargins(dp(3), 0, dp(3), 0)
+            small.addView(t, lp)
+        }
+        right.addView(small, lpV())
+
+        val sl = LinearLayout.LayoutParams(0, MATCH, 1f)
+        sl.setMargins(0, 0, dp(6), 0)
+        mid.addView(seg, sl)
+        mid.addView(right, LinearLayout.LayoutParams(0, MATCH, 3f))
+        col.addView(mid, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+        val foot = tile("Minutes are counted when a timer starts", false) {}
+        foot.textSize = 13f
+        col.addView(foot, lpV(dp(48)))
         return col
     }
 
