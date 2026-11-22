@@ -842,7 +842,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     private var lastSwRunning = false
 
     // ---- dim (drift) mode: kuch der touch na ho to screen dim + dheere hilti rehti hai ----
-    private val IDLE_MS = 30_000L
+    private val IDLE_MS = 4_000L
     private val DIM_DIGIT = Color.parseColor("#6F6862")
     private var dimmed = false
     private var lastTouch = System.currentTimeMillis()
