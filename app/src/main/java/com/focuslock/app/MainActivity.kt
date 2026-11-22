@@ -153,11 +153,14 @@ class MainActivity : Activity() {
         return t
     }
 
-    private fun tileBg(sel: Boolean, custom: Boolean = false): android.graphics.drawable.Drawable {
-        val uw = C_THEME_ID == "underwater" || C_THEME_ID == "desert" || C_THEME_ID == "cabin"
+    private fun tileBg(sel: Boolean, custom: Boolean = false, hours: Boolean = false): android.graphics.drawable.Drawable {
+        val uw = C_THEME_ID in GLASS_THEMES
         val r = dp(if (uw) 28 else 20).toFloat()
         val cardArt = Art.get(this, "card")
-        if (custom && cardArt != null) return TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, r, cardArt, false, 0, if (sel) C_PRIMARY else 0)
+        val hoursArt = if (hours) Art.get(this, "hours") else null
+        if (hoursArt != null) return TileBg(C_TILE, C_TILE, 0, r, hoursArt, false, 0x01FFFFFF, if (sel) C_PRIMARY else 0)
+        val cardVeil = if (C_THEME_ID in LIGHT_CARD_THEMES) 0x14FFFFFF else 0
+        if (custom && cardArt != null) return TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, r, cardArt, false, cardVeil, if (sel) C_PRIMARY else 0)
         if (Art.get(this, "bg") != null) {
             val soft = (C_TILE and 0x00FFFFFF) or (0xC8 shl 24)
             if (uw) return TileBg(if (C_THEME_ID != "underwater") (C_TILE and 0x00FFFFFF) or (0xEB shl 24) else 0xEBE3F1EE.toInt(), 0xF2FFFFFF.toInt(), C_HILL, r, null, true, 0, if (sel) C_PRIMARY else 0)
@@ -170,8 +173,8 @@ class MainActivity : Activity() {
         if (t == null) return
         val artTheme = Art.get(this, "bg") != null
         val cardArt = t === tCustom && Art.get(this, "card") != null
-        t.setTextColor(if (cardArt || (sel && !artTheme)) Color.WHITE else C_TXT)
-        t.background = tileBg(sel, t === tCustom)
+        t.setTextColor(if (cardArt && C_THEME_ID in LIGHT_CARD_THEMES) C_TXT else if (cardArt || (sel && !artTheme)) Color.WHITE else C_TXT)
+        t.background = tileBg(sel, t === tCustom, t === t180)
     }
 
     private fun hrow(vararg v: View): LinearLayout {
