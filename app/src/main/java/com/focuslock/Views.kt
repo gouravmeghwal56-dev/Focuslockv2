@@ -478,7 +478,26 @@ class DotsView(ctx: Context) : View(ctx) {
     var total = 40
     var filled = 0
     var marks: BooleanArray? = null
+
+    /** Optional intensity per square: 0 = none, 1..3 = light..strong orange. */
+    var levels: IntArray? = null
+    /** Squares from this index on are in the future (drawn very light). */
+    var futureFrom = Int.MAX_VALUE
+    /** Selected square (drawn dark), -1 = none. */
+    var selected = -1
+    var onPick: ((Int) -> Unit)? = null
     private val paint = Paint()
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        val cb = onPick ?: return super.onTouchEvent(e)
+        if (e.action == MotionEvent.ACTION_DOWN) return true
+        if (e.action == MotionEvent.ACTION_UP && total > 0 && width > 0) {
+            val i = (e.x / (width.toFloat() / total)).toInt().coerceIn(0, total - 1)
+            if (i < futureFrom) cb(i)
+            return true
+        }
+        return super.onTouchEvent(e)
+    }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -488,9 +507,20 @@ class DotsView(ctx: Context) : View(ctx) {
         val s = minOf(cell * 0.62f, h)
         val y = (h - s) / 2f
         val mk = marks
+        val lv = levels
         for (i in 0 until total) {
-            val on = if (mk != null) (i < mk.size && mk[i]) else i < filled
-            paint.color = if (on) C_ORANGE else C_TILE
+            paint.color = when {
+                i == selected -> C_DARK
+                lv != null && i >= futureFrom -> Color.parseColor("#F1EDED")
+                lv != null -> when (lv.getOrElse(i) { 0 }) {
+                    0 -> C_TILE
+                    1 -> Color.parseColor("#F7C4A5")
+                    2 -> Color.parseColor("#FA9A5C")
+                    else -> C_ORANGE
+                }
+                (if (mk != null) (i < mk.size && mk[i]) else i < filled) -> C_ORANGE
+                else -> C_TILE
+            }
             val x = i * cell + (cell - s) / 2f
             canvas.drawRect(x, y, x + s, y + s, paint)
         }
