@@ -115,10 +115,29 @@ class GlyphView(ctx: Context, private val kind: Int) : View(ctx) {
 
 // ---------- Pixel digits (for the SEC tile) ----------
 
-class PixelNumberView(ctx: Context) : View(ctx) {
+class PixelNumberView(ctx: Context) : AssembleView(ctx) {
     private var text = "00"
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
+    private val seamPaint = Paint().apply {
+        xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR)
+        strokeWidth = 2f
+    }
+
+    var color = Color.WHITE
+        set(v) {
+            if (field != v) {
+                field = v
+                invalidate()
+            }
+        }
+    var seams = false
+        set(v) {
+            if (field != v) {
+                field = v
+                invalidate()
+            }
+        }
 
     fun setText(s: String) {
         if (s != text) {
@@ -127,9 +146,8 @@ class PixelNumberView(ctx: Context) : View(ctx) {
         }
     }
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        paint.color = Color.WHITE
+    override fun drawContent(canvas: Canvas) {
+        paint.color = color
         val n = text.length
         val w = width.toFloat()
         val h = height.toFloat()
@@ -143,7 +161,13 @@ class PixelNumberView(ctx: Context) : View(ctx) {
         val y = (h - dh) / 2f + dh * 0.35f
         for (ch in text) {
             val d = ch - '0'
-            if (d in 0..9) drawDigit(canvas, d, x, y, dw, dh, t)
+            if (d in 0..9) {
+                drawDigit(canvas, d, x, y, dw, dh, t)
+                if (seams) {
+                    for (k in 1..2) canvas.drawLine(x + k * dw / 3f, y, x + k * dw / 3f, y + dh, seamPaint)
+                    for (k in 1..4) canvas.drawLine(x, y + k * dh / 5f, x + dw, y + k * dh / 5f, seamPaint)
+                }
+            }
             x += dw * (1f + gap)
         }
     }
@@ -817,6 +841,104 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     private lateinit var lapBtn: TextView
     private var lastSwRunning = false
 
+    // ---- dim (drift) mode: kuch der touch na ho to screen dim + dheere hilti rehti hai ----
+    private val IDLE_MS = 30_000L
+    private val DIM_DIGIT = Color.parseColor("#6F6862")
+    private var dimmed = false
+    private var lastTouch = System.currentTimeMillis()
+    private lateinit var headerV: View
+    private lateinit var swBoxV: View
+    private lateinit var leftV: View
+    private lateinit var secCardV: View
+    private var fadeViews: List<View> = emptyList()
+    private val driftHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val driftRun = object : Runnable {
+        override fun run() {
+            if (!dimmed || !view.isAttachedToWindow) return
+            val t = System.currentTimeMillis().toDouble()
+            val amp = dp(11).toDouble()
+            leftV.translationX = (amp * Math.sin(t / 6200.0)).toFloat()
+            leftV.translationY = (amp * Math.cos(t / 4700.0)).toFloat()
+            secCardV.translationX = (amp * Math.sin(t / 5300.0 + 1.7)).toFloat()
+            secCardV.translationY = (amp * Math.cos(t / 7100.0 + 0.6)).toFloat()
+            driftHandler.postDelayed(this, 40L)
+        }
+    }
+
+    private fun outlineBg(r: Int): GradientDrawable {
+        val g = GradientDrawable()
+        g.setColor(Color.BLACK)
+        g.setStroke(dp(1), Color.parseColor("#3A3A3A"))
+        g.cornerRadius = dp(r).toFloat()
+        return g
+    }
+
+    private fun setBrightness(b: Float) {
+        val a = act.window.attributes
+        a.screenBrightness = b
+        act.window.attributes = a
+    }
+
+    /** Activity.onUserInteraction se call hota hai. */
+    fun poke() {
+        lastTouch = System.currentTimeMillis()
+        if (dimmed) exitDim()
+    }
+
+    private fun enterDim() {
+        dimmed = true
+        for (v in fadeViews) {
+            v.animate().alpha(0f).setDuration(350L).withEndAction {
+                if (dimmed) v.visibility = if (v === swBoxV) View.GONE else View.INVISIBLE
+            }.start()
+        }
+        leftV.background = outlineBg(28)
+        secCardV.background = outlineBg(26)
+        clock.dyShift = 0f
+        clock.seams = true
+        secView.color = DIM_DIGIT
+        secView.seams = true
+        setBrightness(0.01f)
+        act.window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        update()
+        clock.assemble(900L)
+        secView.assemble(700L)
+        driftHandler.removeCallbacks(driftRun)
+        driftHandler.post(driftRun)
+    }
+
+    private fun exitDim() {
+        dimmed = false
+        driftHandler.removeCallbacks(driftRun)
+        for (v in fadeViews) {
+            v.visibility = View.VISIBLE
+            v.animate().cancel()
+            v.alpha = 0f
+            v.animate().alpha(1f).setDuration(350L).start()
+        }
+        leftV.animate().translationX(0f).translationY(0f).setDuration(300L).start()
+        secCardV.animate().translationX(0f).translationY(0f).setDuration(300L).start()
+        leftV.background = cardBg(28)
+        secCardV.background = cardBg()
+        clock.seams = false
+        secView.color = Color.WHITE
+        secView.seams = false
+        setBrightness(0.08f)
+        act.window.decorView.systemUiVisibility = 0
+        update()
+        clock.post { clock.dyShift = -clock.height * 0.05f }
+        clock.assemble(700L)
+        secView.assemble(600L)
+    }
+
+    /** Focus screen band hote waqt cleanup. */
+    fun release() {
+        dimmed = false
+        driftHandler.removeCallbacks(driftRun)
+        swHandler.removeCallbacks(swTick)
+    }
+
     private fun swText(): CharSequence {
         val e = Store.swElapsed(act)
         val s = e / 1000L
@@ -841,8 +963,10 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         val n = swLaps.size
         if (n == 0) {
             lapTv.text = ""
+            lapTv.visibility = View.GONE   // laps nahi to jagah mat roko (time aur buttons paas rahein)
             return
         }
+        lapTv.visibility = View.VISIBLE
         val sb = StringBuilder()
         for (i in n - 1 downTo maxOf(0, n - 2)) {
             val split = swLaps[i] - (if (i > 0) swLaps[i - 1] else 0L)
@@ -998,6 +1122,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         title.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         title.gravity = Gravity.CENTER
         val header = FrameLayout(act)
+        headerV = header
         header.addView(title, FrameLayout.LayoutParams(MATCH, MATCH))
         root.addView(header, LinearLayout.LayoutParams(MATCH, dp(52)))
 
@@ -1005,11 +1130,13 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         val left = LinearLayout(act)
         left.orientation = LinearLayout.VERTICAL
         left.background = cardBg(28)
+        leftV = left
         left.setPadding(dp(16), dp(16), dp(16), dp(16))
         clock = PixelClockView(act)
         left.addView(clock, LinearLayout.LayoutParams(MATCH, 0, 1f))
 
         val swBox = LinearLayout(act)
+        swBoxV = swBox
         swBox.orientation = LinearLayout.VERTICAL
         swBox.gravity = Gravity.CENTER
         swBox.addView(smallLabel("STOPWATCH"), LinearLayout.LayoutParams(MATCH, WRAP))
@@ -1031,6 +1158,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         lapTv.gravity = Gravity.CENTER
         lapTv.minLines = 2
         lapTv.maxLines = 2
+        lapTv.visibility = View.GONE
         val lapLp = LinearLayout.LayoutParams(MATCH, WRAP)
         lapLp.topMargin = dp(4)
         swBox.addView(lapTv, lapLp)
@@ -1089,13 +1217,14 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         val secCard = LinearLayout(act)
         secCard.orientation = LinearLayout.VERTICAL
         secCard.background = cardBg()
+        secCardV = secCard
         secCard.gravity = Gravity.CENTER
         secView = PixelNumberView(act)
         secCard.addView(secView, LinearLayout.LayoutParams(MATCH, 0, 1f))
         secCard.addView(smallLabel("SEC"), LinearLayout.LayoutParams(MATCH, WRAP))
 
         // Big HH:MM digits: apne hisse ke center se halka upar (neeche stopwatch hai)
-        clock.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> clock.dyShift = -clock.height * 0.05f }
+        clock.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (!dimmed) clock.dyShift = -clock.height * 0.05f }
 
         // +15 HOLD tile
         val holdCard = FrameLayout(act)
@@ -1186,6 +1315,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         root.addView(body, LinearLayout.LayoutParams(MATCH, 0, 1f))
 
         // entry animation
+        fadeViews = listOf(header, swBox, holdCard, endsTv, chuteCard, rainCard, slide, rail)
         val items = listOf<View>(left, secCard, holdCard, endsTv, chuteCard, rainCard, slide, rail)
         for ((i, v) in items.withIndex()) {
             v.alpha = 0f
@@ -1258,7 +1388,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         val now = System.currentTimeMillis()
         val until = Store.until(act)
         val remSec = ((until - now) / 1000L).coerceAtLeast(0L)
-        clock.show((remSec / 60L).toInt(), Color.WHITE)
+        clock.show((remSec / 60L).toInt(), if (dimmed) DIM_DIGIT else Color.WHITE)
         timerTv.text = swText()
         val swOn = Store.swRunning(act)
         swHandler.removeCallbacks(swTick)
@@ -1269,6 +1399,8 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
             swBtn.kind = if (swOn) IconView.PAUSE else IconView.PLAY
             swBtn.invalidate()
         }
+
+        if (!dimmed && remSec > 0L && now - lastTouch > IDLE_MS) enterDim()
 
         val sec = (remSec % 60L).toInt()
         if (sec != lastSec) {
