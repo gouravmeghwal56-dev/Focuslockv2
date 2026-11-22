@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.graphics.Rect
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.Settings
@@ -441,6 +442,10 @@ class BlockService : AccessibilityService() {
         dxAt = now
         val root = rootInActiveWindow ?: return
         if (root.packageName?.toString() != pkg) return
+        if (ig) {
+            handleInstagram(root, now)
+            return
+        }
         var hit = false
         for (n in if (yt) ytIds else igIds) {
             val l = root.findAccessibilityNodeInfosByViewId("$pkg:id/$n")
@@ -473,6 +478,82 @@ class BlockService : AccessibilityService() {
             performGlobalAction(GLOBAL_ACTION_BACK)
         }
         Toast.makeText(this, if (yt) "Shorts blocked" else "Reels blocked", Toast.LENGTH_SHORT).show()
+    }
+
+    // ---------- Instagram Reels (safe version: BACK spam nahi, galat page nahi khulega) ----------
+    private fun igNodes(root: AccessibilityNodeInfo, id: String): List<AccessibilityNodeInfo> =
+        root.findAccessibilityNodeInfosByViewId("com.instagram.android:id/$id") ?: emptyList()
+
+    private fun clickUp(n: AccessibilityNodeInfo): Boolean {
+        var x: AccessibilityNodeInfo? = n
+        var d = 0
+        while (x != null && d < 4) {
+            if (x.isClickable) return x.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            x = x.parent
+            d++
+        }
+        return false
+    }
+
+    /** Bottom bar ka Home tab dabao (Instagram ka apna navigation, back-stack nahi chhedta). */
+    private fun clickIgHome(root: AccessibilityNodeInfo): Boolean {
+        for (n in igNodes(root, "feed_tab")) if (clickUp(n)) return true
+        val q = ArrayDeque<AccessibilityNodeInfo>()
+        q.add(root)
+        var cnt = 0
+        while (q.isNotEmpty() && cnt < 600) {
+            val node = q.removeFirst()
+            cnt++
+            if (node.isVisibleToUser && node.contentDescription?.toString()?.trim().equals("Home", true)) {
+                if (clickUp(node)) return true
+            }
+            for (i in 0 until node.childCount) {
+                val ch = node.getChild(i)
+                if (ch != null) q.add(ch)
+            }
+        }
+        return false
+    }
+
+    private fun handleInstagram(root: AccessibilityNodeInfo, now: Long) {
+        val dm = resources.displayMetrics
+        // 1) Reels tab bottom bar me selected hai?
+        var reelsTab = igNodes(root, "clips_tab").any { it.isSelected || it.isChecked || it.parent?.isSelected == true }
+        // 2) Poori screen wala Reels viewer (sirf asli viewer, chhote/preload containers nahi)
+        var viewer = false
+        for (n in igNodes(root, "clips_viewer_view_pager")) {
+            if (!n.isVisibleToUser) continue
+            val r = Rect()
+            n.getBoundsInScreen(r)
+            if (r.width() >= dm.widthPixels * 0.5f && r.height() >= dm.heightPixels * 0.6f) {
+                viewer = true
+                break
+            }
+        }
+        if (!reelsTab && !viewer) {
+            igSeenAt = 0L
+            return
+        }
+        if (inChat(root)) return
+        // lagataar 2 baar dikhe tabhi action (beech me page badalte time galti na ho)
+        if (igSeenAt == 0L || now - igSeenAt > 1500L) {
+            igSeenAt = now
+            handler.postDelayed({ checkDetox("com.instagram.android") }, 450L)
+            return
+        }
+        if (now - igSeenAt < 300L) return
+        igSeenAt = 0L
+        if (now - dxLastHit < 2500L) dxHits++ else dxHits = 1
+        dxLastHit = now
+        if (dxHits >= 3) {
+            dxHits = 0
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        } else {
+            // Reels tab: Home tab dabao. Kisi aur jagah se khuli reel: ek BACK (jaise tum khud karte)
+            val ok = reelsTab && clickIgHome(root)
+            if (!ok) performGlobalAction(GLOBAL_ACTION_BACK)
+        }
+        Toast.makeText(this, "Reels blocked", Toast.LENGTH_SHORT).show()
     }
 
     // Blocked app khulte hi black focus screen samne aaye
