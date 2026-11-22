@@ -667,34 +667,161 @@ class MainActivity : Activity() {
     }
 
     private fun customDialog() {
-        val box = LinearLayout(this)
-        box.orientation = LinearLayout.HORIZONTAL
-        box.setPadding(dp(16), dp(8), dp(16), dp(0))
-        val eh = EditText(this)
-        eh.hint = "hours"
-        eh.inputType = InputType.TYPE_CLASS_NUMBER
-        eh.setText((durMin / 60).toString())
-        val em = EditText(this)
-        em.hint = "minutes"
-        em.inputType = InputType.TYPE_CLASS_NUMBER
-        em.setText((durMin % 60).toString())
-        box.addView(eh, LinearLayout.LayoutParams(0, WRAP, 1f))
-        box.addView(em, LinearLayout.LayoutParams(0, WRAP, 1f))
-        AlertDialog.Builder(this)
-            .setTitle("Custom time (max 24 hours)")
-            .setView(box)
-            .setPositiveButton("OK") { _, _ ->
-                val t = (eh.text.toString().toLongOrNull() ?: 0L) * 60L + (em.text.toString().toLongOrNull() ?: 0L)
-                if (t in 1L..1440L) {
-                    durMin = t.toInt()
-                    refreshDur(false)
-                    updateLeft()
-                } else {
-                    toast("Pick between 1 minute and 24 hours")
-                }
+        val root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.gravity = Gravity.CENTER_HORIZONTAL
+        root.setPadding(dp(22), dp(20), dp(22), dp(18))
+        root.background = rounded(Color.parseColor("#F6F2F1"), 28)
+
+        val title = TextView(this)
+        title.text = "Custom time"
+        title.textSize = 18f
+        title.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        title.setTextColor(C_DARK)
+        root.addView(title, LinearLayout.LayoutParams(WRAP, WRAP))
+
+        // live preview (same pixel font as the timer)
+        val pv = PixelClockView(this)
+        val pvLp = LinearLayout.LayoutParams(dp(260), dp(80))
+        pvLp.topMargin = dp(10)
+        root.addView(pv, pvLp)
+
+        // scroll wheels: HRS | MIN  (no typing)
+        val wheels = LinearLayout(this)
+        wheels.orientation = LinearLayout.HORIZONTAL
+        wheels.gravity = Gravity.CENTER
+        fun picker(max: Int, cur: Int): android.widget.NumberPicker {
+            val np = android.widget.NumberPicker(this)
+            np.minValue = 0
+            np.maxValue = max
+            np.value = cur
+            np.wrapSelectorWheel = false
+            np.setFormatter { String.format("%02d", it) }
+            np.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+            return np
+        }
+        val ph = picker(24, (durMin / 60).coerceIn(0, 24))
+        val pm = picker(if (ph.value == 24) 0 else 59, if (durMin / 60 >= 24) 0 else durMin % 60)
+        fun label(t: String): TextView {
+            val tv = TextView(this)
+            tv.text = t
+            tv.textSize = 12f
+            tv.letterSpacing = 0.2f
+            tv.setTextColor(C_DIMTXT)
+            tv.gravity = Gravity.CENTER
+            return tv
+        }
+        fun col(lbl: String, np: android.widget.NumberPicker): LinearLayout {
+            val c = LinearLayout(this)
+            c.orientation = LinearLayout.VERTICAL
+            c.gravity = Gravity.CENTER_HORIZONTAL
+            c.addView(label(lbl), LinearLayout.LayoutParams(WRAP, WRAP))
+            c.addView(np, LinearLayout.LayoutParams(dp(90), dp(130)))
+            return c
+        }
+        val sep = TextView(this)
+        sep.text = ":"
+        sep.textSize = 28f
+        sep.setTextColor(C_DARK)
+        sep.gravity = Gravity.CENTER
+        wheels.addView(col("HRS", ph), LinearLayout.LayoutParams(WRAP, WRAP))
+        wheels.addView(sep, LinearLayout.LayoutParams(dp(28), WRAP))
+        wheels.addView(col("MIN", pm), LinearLayout.LayoutParams(WRAP, WRAP))
+        val wLp = LinearLayout.LayoutParams(WRAP, WRAP)
+        wLp.topMargin = dp(6)
+        root.addView(wheels, wLp)
+
+        fun refresh() {
+            // 24h = max, so minutes must be 00 there
+            if (ph.value == 24) {
+                pm.value = 0
+                pm.maxValue = 0
+            } else {
+                pm.maxValue = 59
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+            pv.show(ph.value * 60 + pm.value, C_ORANGE)
+        }
+        ph.setOnValueChangedListener { _, _, _ -> refresh() }
+        pm.setOnValueChangedListener { _, _, _ -> refresh() }
+        refresh()
+
+        // quick chips: +5m +10m +30m +1h
+        val chips = LinearLayout(this)
+        chips.orientation = LinearLayout.HORIZONTAL
+        chips.gravity = Gravity.CENTER
+        for ((txt, add) in listOf("+5m" to 5, "+10m" to 10, "+30m" to 30, "+1h" to 60)) {
+            val ch = TextView(this)
+            ch.text = txt
+            ch.textSize = 14f
+            ch.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            ch.setTextColor(C_DARK)
+            ch.gravity = Gravity.CENTER
+            ch.background = rounded(C_TILE, 18)
+            ch.setOnClickListener {
+                val t = (ph.value * 60 + pm.value + add).coerceAtMost(1440)
+                ph.value = t / 60
+                refresh()
+                pm.value = if (t >= 1440) 0 else t % 60
+                refresh()
+            }
+            val lp = LinearLayout.LayoutParams(dp(62), dp(38))
+            lp.leftMargin = dp(4)
+            lp.rightMargin = dp(4)
+            chips.addView(ch, lp)
+        }
+        val cLp = LinearLayout.LayoutParams(WRAP, WRAP)
+        cLp.topMargin = dp(10)
+        root.addView(chips, cLp)
+
+        val hint = TextView(this)
+        hint.text = "Max 24 hours"
+        hint.textSize = 12f
+        hint.setTextColor(C_DIMTXT)
+        hint.gravity = Gravity.CENTER
+        val hLp = LinearLayout.LayoutParams(WRAP, WRAP)
+        hLp.topMargin = dp(10)
+        root.addView(hint, hLp)
+
+        val dlg = AlertDialog.Builder(this).setView(root).create()
+
+        val btns = LinearLayout(this)
+        btns.orientation = LinearLayout.HORIZONTAL
+        btns.gravity = Gravity.CENTER
+        val cancel = TextView(this)
+        cancel.text = "Cancel"
+        cancel.textSize = 15f
+        cancel.setTextColor(C_DARK)
+        cancel.gravity = Gravity.CENTER
+        cancel.background = rounded(C_TILE, 24)
+        cancel.setOnClickListener { dlg.dismiss() }
+        val ok = TextView(this)
+        ok.text = "Set"
+        ok.textSize = 15f
+        ok.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        ok.setTextColor(Color.WHITE)
+        ok.gravity = Gravity.CENTER
+        ok.background = rounded(C_DARK, 24)
+        ok.setOnClickListener {
+            val t = ph.value * 60 + pm.value
+            if (t in 1..1440) {
+                durMin = t
+                refreshDur(false)
+                updateLeft()
+                dlg.dismiss()
+            } else {
+                toast("Pick between 1 minute and 24 hours")
+            }
+        }
+        val b1 = LinearLayout.LayoutParams(dp(110), dp(48))
+        b1.rightMargin = dp(8)
+        btns.addView(cancel, b1)
+        btns.addView(ok, LinearLayout.LayoutParams(dp(130), dp(48)))
+        val bLp = LinearLayout.LayoutParams(WRAP, WRAP)
+        bLp.topMargin = dp(14)
+        root.addView(btns, bLp)
+
+        dlg.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        dlg.show()
     }
 
     private fun toggleStrict() {
