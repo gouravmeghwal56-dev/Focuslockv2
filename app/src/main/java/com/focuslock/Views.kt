@@ -1496,7 +1496,6 @@ val LIGHT_CARD_THEMES = setOf("japan", "rome")
 /** Per-theme scene panel fit: [top, right, bottom (fractions of the art), max height (fraction of screen)]. Rain draws its panel as-is. */
 val SCENE_FIT: Map<String, FloatArray> = mapOf(
     "underwater" to floatArrayOf(0.695f, 0.500f, 1.000f, 0.46f),
-    "desert" to floatArrayOf(0.640f, 0.515f, 1.000f, 0.46f),
     "cabin" to floatArrayOf(0.085f, 0.605f, 0.978f, 0.46f),
     "lake" to floatArrayOf(0.585f, 0.505f, 0.980f, 0.46f),
     "autumn" to floatArrayOf(0.535f, 0.505f, 0.980f, 0.46f),
@@ -1528,7 +1527,8 @@ class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.d
             val sTop = (art.height * fit[0]).toInt()
             val sRight = (art.width * fit[1]).toInt() + 1
             val sBot = (art.height * fit[2]).toInt()
-            val full = RectF(dst.left, dst.bottom - (art.height - sTop) * sc, dst.left + sRight * sc, dst.bottom)
+            // a few px of slack so the old panel edge never peeks through anti-aliasing
+            val full = RectF(dst.left - 2f, dst.bottom - (art.height - sTop) * sc - 4f, dst.left + sRight * sc + 6f, dst.bottom + 2f)
             c.save()
             c.clipRect(full, android.graphics.Region.Op.DIFFERENCE)
             c.drawBitmap(art, null, dst, p)
