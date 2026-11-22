@@ -651,32 +651,34 @@ class MainActivity : Activity() {
             lockedToast()
             return
         }
-        durMin = (durMin + d).coerceIn(1, 1440)
+        val n = (durMin + d).coerceIn(1, 1440)
+        if (n == durMin) {
+            ruler?.shake()
+            return
+        }
+        durMin = n
         refreshDur(false)
         updateLeft()
     }
 
     private fun customDialog() {
+        val origDur = durMin
+        var confirmed = false
+
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
         root.gravity = Gravity.CENTER_HORIZONTAL
-        root.setPadding(dp(22), dp(20), dp(22), dp(18))
+        root.setPadding(dp(22), dp(18), dp(22), dp(16))
         root.background = rounded(Color.parseColor("#F6F2F1"), 28)
 
         val title = TextView(this)
         title.text = "Custom time"
-        title.textSize = 18f
-        title.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        title.textSize = 16f
+        title.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         title.setTextColor(C_DARK)
         root.addView(title, LinearLayout.LayoutParams(WRAP, WRAP))
 
-        // live preview (same pixel font as the timer)
-        val pv = PixelClockView(this)
-        val pvLp = LinearLayout.LayoutParams(dp(260), dp(80))
-        pvLp.topMargin = dp(10)
-        root.addView(pv, pvLp)
-
-        // scroll wheels: HRS | MIN  (no typing)
+        // scroll wheels: HRS | MIN  (infinite: 24 -> 00 and 59 -> 00)
         val wheels = LinearLayout(this)
         wheels.orientation = LinearLayout.HORIZONTAL
         wheels.gravity = Gravity.CENTER
@@ -685,17 +687,17 @@ class MainActivity : Activity() {
             np.minValue = 0
             np.maxValue = max
             np.value = cur
-            np.wrapSelectorWheel = false
+            np.wrapSelectorWheel = true
             np.setFormatter { String.format("%02d", it) }
             np.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
             return np
         }
         val ph = picker(24, (durMin / 60).coerceIn(0, 24))
-        val pm = picker(if (ph.value == 24) 0 else 59, if (durMin / 60 >= 24) 0 else durMin % 60)
+        val pm = picker(59, if (durMin / 60 >= 24) 0 else durMin % 60)
         fun label(t: String): TextView {
             val tv = TextView(this)
             tv.text = t
-            tv.textSize = 12f
+            tv.textSize = 11f
             tv.letterSpacing = 0.2f
             tv.setTextColor(C_DIMTXT)
             tv.gravity = Gravity.CENTER
@@ -711,7 +713,7 @@ class MainActivity : Activity() {
         }
         val sep = TextView(this)
         sep.text = ":"
-        sep.textSize = 28f
+        sep.textSize = 26f
         sep.setTextColor(C_DARK)
         sep.gravity = Gravity.CENTER
         wheels.addView(col("HRS", ph), LinearLayout.LayoutParams(WRAP, WRAP))
@@ -721,19 +723,29 @@ class MainActivity : Activity() {
         wLp.topMargin = dp(6)
         root.addView(wheels, wLp)
 
+        val ok = TextView(this)
+        fun total() = ph.value * 60 + pm.value
+
         fun refresh() {
             // 24h = max, so minutes must be 00 there
-            if (ph.value == 24) {
-                pm.value = 0
-                pm.maxValue = 0
-            } else {
-                pm.maxValue = 59
+            if (ph.value == 24 && pm.value != 0) pm.value = 0
+            val t = total()
+            ok.alpha = if (t in 1..1440) 1f else 0.4f
+            // live update on the main page behind the dialog
+            if (t in 1..1440 && t != durMin) {
+                durMin = t
+                refreshDur(false)
+                updateLeft()
             }
-            pv.show(ph.value * 60 + pm.value, C_ORANGE)
         }
-        ph.setOnValueChangedListener { _, _, _ -> refresh() }
-        pm.setOnValueChangedListener { _, _, _ -> refresh() }
-        refresh()
+        ph.setOnValueChangedListener { _, _, nv ->
+            if (nv == 24) pm.value = 0
+            refresh()
+        }
+        pm.setOnValueChangedListener { _, _, _ ->
+            if (ph.value == 24) pm.value = 0
+            refresh()
+        }
 
         // quick chips: +5m +10m +30m +1h
         val chips = LinearLayout(this)
@@ -748,9 +760,8 @@ class MainActivity : Activity() {
             ch.gravity = Gravity.CENTER
             ch.background = rounded(C_TILE, 18)
             ch.setOnClickListener {
-                val t = (ph.value * 60 + pm.value + add).coerceAtMost(1440)
+                val t = (total() + add).coerceAtMost(1440)
                 ph.value = t / 60
-                refresh()
                 pm.value = if (t >= 1440) 0 else t % 60
                 refresh()
             }
@@ -769,7 +780,7 @@ class MainActivity : Activity() {
         hint.setTextColor(C_DIMTXT)
         hint.gravity = Gravity.CENTER
         val hLp = LinearLayout.LayoutParams(WRAP, WRAP)
-        hLp.topMargin = dp(10)
+        hLp.topMargin = dp(8)
         root.addView(hint, hLp)
 
         val dlg = AlertDialog.Builder(this).setView(root).create()
@@ -784,7 +795,6 @@ class MainActivity : Activity() {
         cancel.gravity = Gravity.CENTER
         cancel.background = rounded(C_TILE, 24)
         cancel.setOnClickListener { dlg.dismiss() }
-        val ok = TextView(this)
         ok.text = "Set"
         ok.textSize = 15f
         ok.typeface = Typeface.create("sans-serif", Typeface.BOLD)
@@ -792,11 +802,9 @@ class MainActivity : Activity() {
         ok.gravity = Gravity.CENTER
         ok.background = rounded(C_DARK, 24)
         ok.setOnClickListener {
-            val t = ph.value * 60 + pm.value
+            val t = total()
             if (t in 1..1440) {
-                durMin = t
-                refreshDur(false)
-                updateLeft()
+                confirmed = true
                 dlg.dismiss()
             } else {
                 toast("Pick between 1 minute and 24 hours")
@@ -810,7 +818,33 @@ class MainActivity : Activity() {
         bLp.topMargin = dp(14)
         root.addView(btns, bLp)
 
-        dlg.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        // cancel / tap outside => put the old duration back
+        dlg.setOnDismissListener {
+            if (!confirmed && durMin != origDur) {
+                durMin = origDur
+                refreshDur(false)
+                updateLeft()
+            }
+        }
+
+        refresh()
+        dlg.window?.let { w ->
+            w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            // keep the page behind visible so the live update can be seen
+            w.setDimAmount(0.12f)
+            val land = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            if (land) {
+                w.setGravity(Gravity.END or Gravity.CENTER_VERTICAL)
+                val lp = w.attributes
+                lp.x = dp(24)
+                w.attributes = lp
+            } else {
+                w.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+                val lp = w.attributes
+                lp.y = dp(24)
+                w.attributes = lp
+            }
+        }
         dlg.show()
     }
 
