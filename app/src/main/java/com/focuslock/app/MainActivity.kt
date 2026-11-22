@@ -1308,14 +1308,14 @@ class MainActivity : Activity() {
             list.addView(v, lp)
         }
         if (installed("com.google.android.youtube")) {
-            addCard(detoxCard("YouTube Shorts", "com.google.android.youtube", Store.detoxShorts(this), null, null) {
+            addCard(detoxCard("YouTube Shorts", "com.google.android.youtube", Store.detoxShorts(this), null, { igDbgMenu("com.google.android.youtube") }) {
                 Store.setDetoxShorts(this, !Store.detoxShorts(this))
                 render()
                 updateLeft()
             })
         }
         if (installed("com.instagram.android")) {
-            addCard(detoxCard("Instagram Reels", "com.instagram.android", Store.detoxReels(this), null, null) {
+            addCard(detoxCard("Instagram Reels", "com.instagram.android", Store.detoxReels(this), null, { igDbgMenu("com.instagram.android") }) {
                 Store.setDetoxReels(this, !Store.detoxReels(this))
                 render()
                 updateLeft()
@@ -1416,6 +1416,20 @@ class MainActivity : Activity() {
         il.topMargin = dp(8)
         col.addView(info, il)
         return col
+    }
+
+    private fun igDbgMenu(pkg: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Debug")
+            .setItems(arrayOf("Capture IDs (20 sec)", "Show captured IDs / last block")) { _, i ->
+                if (i == 0) {
+                    Store.dxDbgStart(this, pkg)
+                    Toast.makeText(this, "20 sec: app kholo aur wo page kholo (blocking band rahegi)", Toast.LENGTH_LONG).show()
+                } else {
+                    showCapturedIds()
+                }
+            }
+            .show()
     }
 
     private fun detoxAppMenu(pkg: String) {
