@@ -451,6 +451,14 @@ class MainActivity : Activity() {
             w.setLayout(dp(300), WRAP)
         }
         dlg.show()
+        // dobara kholne pe list upar nahi, chune hue theme ke paas khule
+        sv.post {
+            val sel = cards.firstOrNull { it.first.id == curId }?.second
+            if (sel != null) {
+                val row = sel.parent as View
+                sv.scrollTo(0, (row.top - dp(40)).coerceAtLeast(0))
+            }
+        }
     }
 
     private fun circleBtn(kind: Int, onClick: () -> Unit): IconView {
