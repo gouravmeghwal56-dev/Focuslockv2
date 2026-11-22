@@ -19,6 +19,7 @@ import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -605,14 +606,19 @@ class RainView(
 
     /** Music app: upar icon, beech me abhi ka track, niche prev / play-pause / next. */
     private fun drawApp(canvas: Canvas, pkg: String, w: Float, h: Float) {
-        try {
-            val d = context.packageManager.getApplicationIcon(pkg)
-            val s = (Math.min(w, h) * 0.2f).toInt()
-            val cx = (w / 2f).toInt()
-            val cy = (h * 0.20f).toInt()
-            d.setBounds(cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2)
-            d.draw(canvas)
-        } catch (e: Exception) {
+        val cover = if (hasAccess) media?.art else null
+        if (cover != null) {
+            drawCover(canvas, cover, w, h)
+        } else {
+            try {
+                val d = context.packageManager.getApplicationIcon(pkg)
+                val s = (Math.min(w, h) * 0.2f).toInt()
+                val cx = (w / 2f).toInt()
+                val cy = (h * 0.20f).toInt()
+                d.setBounds(cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2)
+                d.draw(canvas)
+            } catch (e: Exception) {
+            }
         }
         tp.textAlign = Paint.Align.CENTER
         tp.typeface = Typeface.create("sans-serif", Typeface.BOLD)
@@ -657,6 +663,28 @@ class RainView(
             path.close()
             canvas.drawPath(path, paint)
         }
+    }
+
+    private val srcR = android.graphics.Rect()
+    private val dstR = RectF()
+
+    /** Gaane ki photo: beech se square crop + gol kone. */
+    private fun drawCover(canvas: Canvas, b: android.graphics.Bitmap, w: Float, h: Float) {
+        val s = Math.min(w, h) * 0.30f
+        val cx = w / 2f
+        val cy = h * 0.22f
+        dstR.set(cx - s / 2f, cy - s / 2f, cx + s / 2f, cy + s / 2f)
+        val side = Math.min(b.width, b.height)
+        srcR.set((b.width - side) / 2, (b.height - side) / 2, (b.width + side) / 2, (b.height + side) / 2)
+        val sv = canvas.save()
+        path.reset()
+        path.addRoundRect(dstR, dens * 12f, dens * 12f, Path.Direction.CW)
+        canvas.clipPath(path)
+        paint.style = Paint.Style.FILL
+        paint.color = Color.WHITE
+        paint.isFilterBitmap = true
+        canvas.drawBitmap(b, srcR, dstR, paint)
+        canvas.restoreToCount(sv)
     }
 
     private fun drawSkip(canvas: Canvas, cx: Float, cy: Float, next: Boolean) {
@@ -783,12 +811,43 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     private lateinit var endsTv: TextView
     private lateinit var timerTv: TextView
     private lateinit var swBtn: IconView
+    private lateinit var lapTv: TextView
+    private lateinit var lapBtn: TextView
     private var lastSwRunning = false
 
-    private fun swText(): String {
+    private fun swText(): CharSequence {
         val e = Store.swElapsed(act)
         val s = e / 1000L
-        return String.format("%d:%02d:%02d.%02d", s / 3600L, (s % 3600L) / 60L, s % 60L, (e % 1000L) / 10L)
+        val sb = SpannableStringBuilder(String.format("%d:%02d:%02d", s / 3600L, (s % 3600L) / 60L, s % 60L))
+        val st = sb.length
+        sb.append(String.format(".%02d", (e % 1000L) / 10L))
+        sb.setSpan(RelativeSizeSpan(0.6f), st, sb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        sb.setSpan(ForegroundColorSpan(C_ORANGE), st, sb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        return sb
+    }
+
+    private val swLaps = ArrayList<Long>()
+
+    private fun fmtShort(ms: Long): String {
+        val s = ms / 1000L
+        val cs = (ms % 1000L) / 10L
+        return if (s >= 3600L) String.format("%d:%02d:%02d.%02d", s / 3600L, (s % 3600L) / 60L, s % 60L, cs)
+        else String.format("%d:%02d.%02d", s / 60L, s % 60L, cs)
+    }
+
+    private fun updateLaps() {
+        val n = swLaps.size
+        if (n == 0) {
+            lapTv.text = ""
+            return
+        }
+        val sb = StringBuilder()
+        for (i in n - 1 downTo maxOf(0, n - 2)) {
+            val split = swLaps[i] - (if (i > 0) swLaps[i - 1] else 0L)
+            if (sb.isNotEmpty()) sb.append("\n")
+            sb.append("LAP ").append(i + 1).append("   ").append(fmtShort(split)).append("   \u00B7   ").append(fmtShort(swLaps[i]))
+        }
+        lapTv.text = sb
     }
 
     // stopwatch chalte time milliseconds smooth dikhane ke liye ~30 fps refresh
@@ -951,14 +1010,27 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         swBox.gravity = Gravity.CENTER
         swBox.addView(smallLabel("STOPWATCH"), LinearLayout.LayoutParams(MATCH, WRAP))
         timerTv = TextView(act)
-        timerTv.textSize = 46f
+        timerTv.textSize = 52f
         timerTv.setTextColor(Color.WHITE)
         timerTv.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         timerTv.gravity = Gravity.CENTER
         timerTv.maxLines = 1
-        timerTv.setAutoSizeTextTypeUniformWithConfiguration(18, 46, 2, android.util.TypedValue.COMPLEX_UNIT_SP)
+        timerTv.setAutoSizeTextTypeUniformWithConfiguration(18, 52, 2, android.util.TypedValue.COMPLEX_UNIT_SP)
         timerTv.text = swText()
         swBox.addView(timerTv, LinearLayout.LayoutParams(MATCH, WRAP))
+
+        // lap list (last 2 laps): lap time + total
+        lapTv = TextView(act)
+        lapTv.textSize = 12f
+        lapTv.setTextColor(F_DIM)
+        lapTv.typeface = Typeface.MONOSPACE
+        lapTv.gravity = Gravity.CENTER
+        lapTv.minLines = 2
+        lapTv.maxLines = 2
+        val lapLp = LinearLayout.LayoutParams(MATCH, WRAP)
+        lapLp.topMargin = dp(4)
+        swBox.addView(lapTv, lapLp)
+
         val swRow = LinearLayout(act)
         swRow.orientation = LinearLayout.HORIZONTAL
         swRow.gravity = Gravity.CENTER
@@ -968,6 +1040,8 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         swReset.background = cardBg(40)
         swReset.setOnClickListener {
             Store.swReset(act)
+            swLaps.clear()
+            updateLaps()
             update()
         }
         swBtn = IconView(act, if (Store.swRunning(act)) IconView.PAUSE else IconView.PLAY)
@@ -981,12 +1055,29 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
             Store.swToggle(act)
             update()
         }
+        lapBtn = TextView(act)
+        lapBtn.text = "LAP"
+        lapBtn.textSize = 12f
+        lapBtn.letterSpacing = 0.1f
+        lapBtn.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        lapBtn.setTextColor(Color.WHITE)
+        lapBtn.gravity = Gravity.CENTER
+        lapBtn.background = cardBg(40)
+        lapBtn.alpha = if (Store.swRunning(act)) 1f else 0.4f
+        lapBtn.setOnClickListener {
+            if (Store.swRunning(act)) {
+                swLaps.add(Store.swElapsed(act))
+                updateLaps()
+            }
+        }
         swRow.addView(swReset, LinearLayout.LayoutParams(dp(56), dp(56)))
         val pl = LinearLayout.LayoutParams(dp(110), dp(56))
-        pl.leftMargin = dp(14)
+        pl.leftMargin = dp(12)
+        pl.rightMargin = dp(12)
         swRow.addView(swBtn, pl)
+        swRow.addView(lapBtn, LinearLayout.LayoutParams(dp(56), dp(56)))
         val rl = LinearLayout.LayoutParams(WRAP, WRAP)
-        rl.topMargin = dp(12)
+        rl.topMargin = dp(6)
         swBox.addView(swRow, rl)
         left.addView(swBox, LinearLayout.LayoutParams(MATCH, 0, 1f))
 
@@ -1046,14 +1137,21 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         row1.addView(secCard, lp(0, MATCH, 1f))
         row1.addView(holdCard, lp(0, MATCH, 1f))
 
+        // col2 ke tiles ke kone row1 / rain tile ke saath barabar rahein (pehle 7px ka farq tha)
         val col2 = LinearLayout(act)
         col2.orientation = LinearLayout.VERTICAL
-        col2.addView(endsTv, lp(MATCH, 0, 1f))
-        col2.addView(chuteCard, lp(MATCH, 0, 1f))
+        val endsLp = LinearLayout.LayoutParams(MATCH, 0, 1f)
+        endsLp.setMargins(0, dp(5), 0, dp(5))
+        col2.addView(endsTv, endsLp)
+        val chuteLp = LinearLayout.LayoutParams(MATCH, 0, 1f)
+        chuteLp.setMargins(0, dp(5), 0, dp(5))
+        col2.addView(chuteCard, chuteLp)
 
         val row2 = LinearLayout(act)
         row2.orientation = LinearLayout.HORIZONTAL
-        row2.addView(col2, lp(0, MATCH, 1f, 0))
+        val col2Lp = LinearLayout.LayoutParams(0, MATCH, 1f)
+        col2Lp.setMargins(dp(5), 0, dp(5), 0)
+        row2.addView(col2, col2Lp)
         row2.addView(rainCard, lp(0, MATCH, 1f))
 
         val grid = LinearLayout(act)
@@ -1068,7 +1166,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         body.orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         if (wide) {
             body.addView(left, lp(0, MATCH, 1f, 6))
-            body.addView(grid, lp(0, MATCH, 1.15f, 6))
+            body.addView(grid, lp(0, MATCH, 1.15f, 1))
             val rl = LinearLayout.LayoutParams(WRAP, WRAP)
             rl.gravity = Gravity.CENTER_VERTICAL
             rl.setMargins(dp(6), dp(6), dp(6), dp(6))
@@ -1160,6 +1258,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         if (swOn) swHandler.post(swTick)
         if (swOn != lastSwRunning) {
             lastSwRunning = swOn
+            lapBtn.alpha = if (swOn) 1f else 0.4f
             swBtn.kind = if (swOn) IconView.PAUSE else IconView.PLAY
             swBtn.invalidate()
         }
