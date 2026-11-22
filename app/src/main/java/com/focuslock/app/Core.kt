@@ -282,6 +282,22 @@ class BlockService : AccessibilityService() {
         "root_clips_layout", "clips_video_container"
     )
 
+    private var igSeenAt = 0L
+    private var dxPolling = false
+    // Snapchat jaise apps me events kam aate hain, isliye app khula rahe to har ~0.8 sec screen khud check karo
+    private val dxPoll = object : Runnable {
+        override fun run() {
+            val root = rootInActiveWindow
+            val p = root?.packageName?.toString()
+            if (root != null && p != null && p in dxApps && p !in dxFull) {
+                if (scanGeneric(root, false)) hitAction("Reels blocked")
+                handler.postDelayed(this, 800L)
+            } else {
+                dxPolling = false
+            }
+        }
+    }
+
     private var dxApps: Set<String> = emptySet()
     private var dxFull: Set<String> = emptySet()
     private var dbgPkg = ""
@@ -292,7 +308,8 @@ class BlockService : AccessibilityService() {
     private var dxAppAt = 0L
     private val genericKeys = listOf("reel", "spotlight", "shorts", "short_video", "clips_viewer")
     // Chat / DM screen ke ids: inme hum Reels-block nahi karte (chat khulne do)
-    private val chatKeys = listOf("direct_", "thread_composer", "message_list", "inbox", "chat_")
+    // sirf DM thread ke andar wale ids (nav bar ke ids jaise ngs_chat_icon_container ya direct_tab NAHI)
+    private val chatKeys = listOf("thread_composer", "message_composer", "direct_thread", "direct_text_message", "row_thread")
 
     /** Chat/DM screen khuli hai? (view ID ke naam se) */
     private fun inChat(root: AccessibilityNodeInfo): Boolean {
@@ -400,6 +417,10 @@ class BlockService : AccessibilityService() {
             }
             return
         }
+        if (pkg in dxApps && pkg !in dxFull && !dxPolling) {
+            dxPolling = true
+            handler.postDelayed(dxPoll, 800L)
+        }
         if ((pkg in dxApps && pkg !in dxFull) || capture) {
             if (t0 - dxAt < 350L) return
             dxAt = t0
@@ -407,7 +428,7 @@ class BlockService : AccessibilityService() {
             if (root.packageName?.toString() != pkg) return
             val hit = scanGeneric(root, capture)
             if (capture) Store.dxDbgSave(this, dbgIds)
-            if (hit && pkg in dxApps && !inChat(root)) hitAction("Reels blocked")
+            if (hit && pkg in dxApps) hitAction("Reels blocked")
             return
         }
         val yt = pkg == "com.google.android.youtube"
@@ -428,8 +449,21 @@ class BlockService : AccessibilityService() {
                 break
             }
         }
-        if (!hit) return
-        if (inChat(root)) return
+        if (!hit) {
+            igSeenAt = 0L
+            return
+        }
+        if (ig && inChat(root)) return
+        if (ig) {
+            // Chat khulte time Reels ka view thodi der dikhta hai: lagataar 2 baar dikhe tabhi block karo
+            if (igSeenAt == 0L || now - igSeenAt > 1500L) {
+                igSeenAt = now
+                handler.postDelayed({ checkDetox(pkg) }, 450L)
+                return
+            }
+            if (now - igSeenAt < 300L) return
+            igSeenAt = 0L
+        }
         if (now - dxLastHit < 2500L) dxHits++ else dxHits = 1
         dxLastHit = now
         if (dxHits >= 3) {
