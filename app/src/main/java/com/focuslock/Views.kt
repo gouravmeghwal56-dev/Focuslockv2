@@ -652,11 +652,35 @@ class RulerView(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
     private var reported = 180
     private var lastY = 0f
     private var ignore = false
+    private var limitHit = false
+    private var shakeAnim: ValueAnimator? = null
 
     fun setMinutes(m: Int) {
         value = m.toFloat().coerceAtLeast(1f)
         reported = m
         invalidate()
+    }
+
+    /** Left-right wobble + reject haptic, used when the user tries to go past 1 min / 24 h. */
+    fun shake() {
+        shakeAnim?.cancel()
+        val amp = dens * 7f
+        val a = ValueAnimator.ofFloat(0f, 1f)
+        a.duration = 280L
+        a.addUpdateListener {
+            val t = it.animatedValue as Float
+            translationX = (Math.sin(t * Math.PI * 6.0) * (1f - t) * amp).toFloat()
+        }
+        a.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) { translationX = 0f }
+            override fun onAnimationCancel(animation: android.animation.Animator) { translationX = 0f }
+        })
+        a.start()
+        shakeAnim = a
+        performHapticFeedback(
+            if (android.os.Build.VERSION.SDK_INT >= 30) android.view.HapticFeedbackConstants.REJECT
+            else android.view.HapticFeedbackConstants.LONG_PRESS
+        )
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -694,13 +718,20 @@ class RulerView(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
                 lastY = e.y
+                limitHit = false
                 ignore = onBlocked?.invoke() == true
             }
             MotionEvent.ACTION_MOVE -> {
                 if (!ignore) {
                     val dy = e.y - lastY
                     lastY = e.y
-                    value = (value - dy / (height / 110f)).coerceIn(1f, 1440f)
+                    val raw = value - dy / (height / 110f)
+                    if (raw < 1f || raw > 1440f) {
+                        if (!limitHit) { limitHit = true; shake() }
+                    } else {
+                        limitHit = false
+                    }
+                    value = raw.coerceIn(1f, 1440f)
                     invalidate()
                     val snapped = Math.round(value).coerceIn(1, 1440)
                     if (snapped != reported) {
