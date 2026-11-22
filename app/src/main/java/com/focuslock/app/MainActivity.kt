@@ -153,14 +153,14 @@ class MainActivity : Activity() {
         return t
     }
 
-    private fun tileBg(sel: Boolean): android.graphics.drawable.Drawable =
-        if (sel) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, dp(20).toFloat(), Art.get(this, "card"))
+    private fun tileBg(sel: Boolean, custom: Boolean = false): android.graphics.drawable.Drawable =
+        if (sel) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, dp(20).toFloat(), if (custom) Art.get(this, "card") else null)
         else TileBg(C_TILE, C_TILE, C_HILL, dp(20).toFloat())
 
     private fun styleTile(t: TextView?, sel: Boolean) {
         if (t == null) return
         t.setTextColor(if (sel) Color.WHITE else C_TXT)
-        t.background = tileBg(sel)
+        t.background = tileBg(sel, t === tCustom)
     }
 
     private fun hrow(vararg v: View): LinearLayout {
@@ -1068,6 +1068,7 @@ class MainActivity : Activity() {
         t45 = b
         t180 = c
         tCustom = d
+        d.background = tileBg(!preset, true)
 
         val tilesCol = LinearLayout(this)
         tilesCol.orientation = LinearLayout.VERTICAL
