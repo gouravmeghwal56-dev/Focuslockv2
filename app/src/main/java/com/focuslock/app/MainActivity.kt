@@ -154,14 +154,14 @@ class MainActivity : Activity() {
     }
 
     private fun tileBg(sel: Boolean, custom: Boolean = false): android.graphics.drawable.Drawable =
-        if (custom && Art.get(this, "card") != null) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, dp(20).toFloat(), Art.get(this, "card"))
+        if (custom && Art.get(this, "card") != null) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, dp(20).toFloat(), Art.get(this, "card"), false, if (sel) 0 else ((C_TILE and 0x00FFFFFF) or (0xB8 shl 24)))
         else if (sel) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, dp(20).toFloat())
         else if (Art.get(this, "bg") != null) TileBg((C_TILE and 0x00FFFFFF) or (0xC8 shl 24), (C_TILE and 0x00FFFFFF) or (0xC8 shl 24), C_HILL, dp(20).toFloat(), null, true)
         else TileBg(C_TILE, C_TILE, C_HILL, dp(20).toFloat())
 
     private fun styleTile(t: TextView?, sel: Boolean) {
         if (t == null) return
-        val artCustom = t === tCustom && Art.get(this, "card") != null
+        val artCustom = false
         t.setTextColor(if (sel || artCustom) Color.WHITE else C_TXT)
         t.background = tileBg(sel, t === tCustom)
     }
