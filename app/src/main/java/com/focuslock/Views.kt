@@ -44,6 +44,7 @@ var C_S4: Int = Color.parseColor("#6E6870")
 var C_SUN: Int = Color.parseColor("#FFB066")
 var C_PRIMARY_TOP: Int = Color.parseColor("#403B39")
 var C_HILL: Int = 0
+var C_THEME_ID: String = "default"
 
 // ---------- Custom views ----------
 
@@ -630,6 +631,17 @@ class SceneView(ctx: Context) : View(ctx) {
         val w = width.toFloat()
         val h = height.toFloat()
         p.style = Paint.Style.FILL
+
+        val art = Art.get(context, "scene")
+        if (art != null) {
+            val sc = w / art.width.toFloat()
+            val dh = art.height * sc
+            val src = Rect(0, if (dh > h) ((dh - h) / sc).toInt() else 0, art.width, art.height)
+            val dst = RectF(0f, if (dh > h) 0f else h - dh, w, h)
+            p.isFilterBitmap = true
+            canvas.drawBitmap(art, src, dst, p)
+            return
+        }
 
         val r = h * 0.30f
         val sx = w * 0.72f
@@ -1397,4 +1409,58 @@ class TileBg(private val base: Int, private val top: Int, private val hill: Int,
     override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
     @Suppress("OVERRIDE_DEPRECATION")
     override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+}
+
+
+/** Left card background: rounded fill + optional corner art (branch) from the theme's PNG. */
+class CardBg(private val fill: Int, private val rPx: Float, private val art: Bitmap?) :
+    android.graphics.drawable.Drawable() {
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rf = RectF()
+    private val dst = RectF()
+
+    override fun draw(c: Canvas) {
+        val b = bounds
+        rf.set(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat())
+        p.style = Paint.Style.FILL
+        p.color = fill
+        c.drawRoundRect(rf, rPx, rPx, p)
+        if (art != null) {
+            val w = rf.width() * 0.42f
+            val h = w * art.height / art.width.toFloat()
+            dst.set(rf.left, rf.top, rf.left + w, rf.top + h)
+            p.isFilterBitmap = true
+            c.drawBitmap(art, null, dst, p)
+        }
+    }
+
+    override fun getOutline(outline: android.graphics.Outline) {
+        outline.setRoundRect(bounds, rPx)
+    }
+
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+}
+
+/** Optional per-theme art, dropped in res/drawable-nodpi as theme_<id>_scene.png / theme_<id>_branch.png. */
+object Art {
+    private val cache = HashMap<String, Bitmap?>()
+
+    fun get(ctx: Context, kind: String): Bitmap? {
+        val id = C_THEME_ID
+        if (id == "default") return null
+        val key = id + "_" + kind
+        if (cache.containsKey(key)) return cache[key]
+        var bmp: Bitmap? = null
+        try {
+            val res = ctx.resources.getIdentifier("theme_" + id + "_" + kind, "drawable", ctx.packageName)
+            if (res != 0) bmp = android.graphics.BitmapFactory.decodeResource(ctx.resources, res)
+        } catch (e: Exception) {
+            bmp = null
+        }
+        cache[key] = bmp
+        return bmp
+    }
 }
