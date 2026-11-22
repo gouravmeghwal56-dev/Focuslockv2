@@ -153,16 +153,22 @@ class MainActivity : Activity() {
         return t
     }
 
-    private fun tileBg(sel: Boolean, custom: Boolean = false): android.graphics.drawable.Drawable =
-        if (custom && Art.get(this, "card") != null) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, dp(20).toFloat(), Art.get(this, "card"), false, if (sel) 0 else ((C_TILE and 0x00FFFFFF) or (0xB8 shl 24)))
-        else if (sel) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, dp(20).toFloat())
-        else if (Art.get(this, "bg") != null) TileBg((C_TILE and 0x00FFFFFF) or (0xC8 shl 24), (C_TILE and 0x00FFFFFF) or (0xC8 shl 24), C_HILL, dp(20).toFloat(), null, true)
-        else TileBg(C_TILE, C_TILE, C_HILL, dp(20).toFloat())
+    private fun tileBg(sel: Boolean, custom: Boolean = false): android.graphics.drawable.Drawable {
+        val r = dp(20).toFloat()
+        val cardArt = Art.get(this, "card")
+        if (custom && cardArt != null) return TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, r, cardArt, false, 0, if (sel) C_PRIMARY else 0)
+        if (Art.get(this, "bg") != null) {
+            val soft = (C_TILE and 0x00FFFFFF) or (0xC8 shl 24)
+            return TileBg(soft, soft, C_HILL, r, null, true, 0, if (sel) C_PRIMARY else 0)
+        }
+        return if (sel) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, r) else TileBg(C_TILE, C_TILE, C_HILL, r)
+    }
 
     private fun styleTile(t: TextView?, sel: Boolean) {
         if (t == null) return
-        val artCustom = false
-        t.setTextColor(if (sel || artCustom) Color.WHITE else C_TXT)
+        val artTheme = Art.get(this, "bg") != null
+        val cardArt = t === tCustom && Art.get(this, "card") != null
+        t.setTextColor(if (cardArt || (sel && !artTheme)) Color.WHITE else C_TXT)
         t.background = tileBg(sel, t === tCustom)
     }
 
@@ -1072,6 +1078,9 @@ class MainActivity : Activity() {
         t180 = c
         tCustom = d
         styleTile(d, !preset)
+        styleTile(a, durMin == 15)
+        styleTile(b, durMin == 45)
+        styleTile(c, durMin == 180)
 
         val tilesCol = LinearLayout(this)
         tilesCol.orientation = LinearLayout.VERTICAL
