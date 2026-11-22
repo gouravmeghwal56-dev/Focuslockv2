@@ -1,4 +1,4 @@
-package com.focuslock
+package com.focuslock.app
 
 import android.content.Context
 import android.graphics.Color
