@@ -154,12 +154,14 @@ class MainActivity : Activity() {
     }
 
     private fun tileBg(sel: Boolean, custom: Boolean = false): android.graphics.drawable.Drawable =
-        if (sel) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, dp(20).toFloat(), if (custom) Art.get(this, "card") else null)
+        if (custom && Art.get(this, "card") != null) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, dp(20).toFloat(), Art.get(this, "card"))
+        else if (sel) TileBg(C_PRIMARY, C_PRIMARY_TOP, 0, dp(20).toFloat())
         else TileBg(C_TILE, C_TILE, C_HILL, dp(20).toFloat())
 
     private fun styleTile(t: TextView?, sel: Boolean) {
         if (t == null) return
-        t.setTextColor(if (sel) Color.WHITE else C_TXT)
+        val artCustom = t === tCustom && Art.get(this, "card") != null
+        t.setTextColor(if (sel || artCustom) Color.WHITE else C_TXT)
         t.background = tileBg(sel, t === tCustom)
     }
 
@@ -1068,7 +1070,7 @@ class MainActivity : Activity() {
         t45 = b
         t180 = c
         tCustom = d
-        d.background = tileBg(!preset, true)
+        styleTile(d, !preset)
 
         val tilesCol = LinearLayout(this)
         tilesCol.orientation = LinearLayout.VERTICAL
