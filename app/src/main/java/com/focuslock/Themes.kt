@@ -58,6 +58,7 @@ object Themes {
         C_GRAY = t.gray; C_LINE = t.line
         C_SOFT = t.soft; C_L1 = t.l1; C_L2 = t.l2
         C_PRIMARY_TOP = t.primaryTop; C_HILL = t.hill
+        C_THEME_ID = t.id
         C_CLK_A = t.clkA; C_CLK_Z = t.clkZ
         C_S1 = t.s1; C_S2 = t.s2; C_S3 = t.s3; C_S4 = t.s4; C_SUN = t.sun
     }
