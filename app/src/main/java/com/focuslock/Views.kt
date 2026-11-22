@@ -7,6 +7,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -362,6 +364,24 @@ class PixelClockView(ctx: Context) : AssembleView(ctx) {
             }
         }
 
+    /** Dim mode: faint block seams cut through the digits (blockit look). */
+    var seams = false
+        set(v) {
+            if (field != v) {
+                field = v
+                invalidate()
+            }
+        }
+    private val seamPaint = Paint().apply {
+        xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+        strokeWidth = 2f
+    }
+
+    private fun seamLines(c: Canvas, x: Float, y: Float, dw: Float, dh: Float) {
+        for (k in 1..2) c.drawLine(x + k * dw / 3f, y, x + k * dw / 3f, y + dh, seamPaint)
+        for (k in 1..4) c.drawLine(x, y + k * dh / 5f, x + dw, y + k * dh / 5f, seamPaint)
+    }
+
     fun show(totalMin: Int, c: Int) {
         val h = (totalMin / 60).coerceIn(0, 99)
         val m = totalMin % 60
@@ -452,6 +472,7 @@ class PixelClockView(ctx: Context) : AssembleView(ctx) {
                 x += colonW + gap
             }
             drawDigit(canvas, text[i] - '0', x, y, dw, dh, t)
+            if (seams) seamLines(canvas, x, y, dw, dh)
             x += dw + gap
         }
     }
