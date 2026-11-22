@@ -511,12 +511,13 @@ class MainActivity : Activity() {
 
     // ---------- Clock colour ----------
     private fun timeColor(min: Int): Int {
-        // kam time = grey, jaise time badhta hai orange hota jaata hai (180 min pe poora orange)
+        // kam time = dark grey (#4D4846), 180 min pe poora orange (#F45516), beech me seedha blend
         val t = (min / 180f).coerceIn(0f, 1f)
-        val a = C_GRAY
-        val r = (Color.red(a) + (Color.red(C_ORANGE) - Color.red(a)) * t).toInt()
-        val g = (Color.green(a) + (Color.green(C_ORANGE) - Color.green(a)) * t).toInt()
-        val b = (Color.blue(a) + (Color.blue(C_ORANGE) - Color.blue(a)) * t).toInt()
+        val a = Color.parseColor("#4D4846")
+        val z = Color.parseColor("#F45516")
+        val r = (Color.red(a) + (Color.red(z) - Color.red(a)) * t).toInt()
+        val g = (Color.green(a) + (Color.green(z) - Color.green(a)) * t).toInt()
+        val b = (Color.blue(a) + (Color.blue(z) - Color.blue(a)) * t).toInt()
         return Color.rgb(r, g, b)
     }
 
