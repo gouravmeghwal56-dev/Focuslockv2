@@ -254,7 +254,8 @@ class RainView(
     ctx: Context,
     private val onLabel: (String) -> Unit,
     private val onLaunch: (String) -> Unit,
-    private val onMenu: () -> Unit
+    private val onMenu: () -> Unit,
+    private val onAccess: () -> Unit
 ) : View(ctx) {
     private class Item(val mode: Int, val pkg: String?, val name: String)
 
@@ -272,6 +273,15 @@ class RainView(
     private val xs = FloatArray(30) { (it * 37 % 30) / 30f }
     private val sp = FloatArray(30) { 0.6f + (it * 13 % 7) / 7f * 0.8f }
     private val ln = FloatArray(30) { 0.05f + (it * 5 % 4) * 0.03f }
+    private val tp = android.text.TextPaint(Paint.ANTI_ALIAS_FLAG)
+    private var media: Media.Info? = null
+    private var hasAccess = false
+    private val poll = object : Runnable {
+        override fun run() {
+            refreshMedia()
+            postDelayed(this, 1000L)
+        }
+    }
     private var downX = 0f
     private var downY = 0f
     private var moved = false
@@ -316,19 +326,62 @@ class RainView(
     private fun updateLabel() {
         val it = items.getOrNull(idx) ?: return
         val hint = when {
-            it.pkg != null -> "TAP TO OPEN"
+            it.pkg != null && !hasAccess -> "TAP TO ALLOW ACCESS"
+            it.pkg != null -> "TAP TITLE TO OPEN"
             playing() -> "TAP TO STOP"
             else -> "TAP TO PLAY"
         }
         onLabel(it.name + "  \u00B7  " + hint)
     }
 
-    private fun tap() {
+    private fun refreshMedia() {
+        val pkg = items.getOrNull(idx)?.pkg
+        if (pkg == null) {
+            media = null
+            return
+        }
+        val acc = Media.hasAccess(context)
+        val m = if (acc) Media.get(context, pkg) else null
+        val old = media
+        val changed = acc != hasAccess || m?.title != old?.title || m?.artist != old?.artist || m?.playing != old?.playing
+        hasAccess = acc
+        media = m
+        if (changed) {
+            updateLabel()
+            invalidate()
+        }
+    }
+
+    private fun tap(x: Float, y: Float) {
         val it = items.getOrNull(idx) ?: return
         if (it.pkg != null) {
-            Ambient.fadeOut()
-            onLaunch(it.pkg)
-        } else if (Ambient.mode == it.mode) {
+            if (!hasAccess) {
+                onAccess()
+                return
+            }
+            val w = width.toFloat()
+            val cy = height * 0.72f
+            val r = dens * 34f
+            val dx = dens * 74f
+            val m = media
+            if (Math.abs(y - cy) < r) {
+                when {
+                    Math.abs(x - w / 2f) < r -> {
+                        if (m == null) onLaunch(it.pkg)
+                        else if (m.playing) m.ctl.transportControls.pause()
+                        else m.ctl.transportControls.play()
+                    }
+                    Math.abs(x - (w / 2f - dx)) < r -> m?.ctl?.transportControls?.skipToPrevious()
+                    Math.abs(x - (w / 2f + dx)) < r -> m?.ctl?.transportControls?.skipToNext()
+                    else -> onLaunch(it.pkg)
+                }
+                postDelayed({ refreshMedia() }, 300L)
+            } else {
+                onLaunch(it.pkg)
+            }
+            return
+        }
+        if (Ambient.mode == it.mode) {
             Ambient.fadeOut()
         } else {
             Ambient.set(it.mode)
@@ -345,6 +398,8 @@ class RainView(
         if (Ambient.mode != Ambient.OFF) {
             if (it.pkg == null) Ambient.set(it.mode) else Ambient.fadeOut()
         }
+        media = null
+        refreshMedia()
         swipeDir = dir
         swipeAnim?.cancel()
         val a = ValueAnimator.ofFloat(0f, 1f)
@@ -382,7 +437,7 @@ class RainView(
                     if (Math.abs(dx) > 48f * dens && Math.abs(dx) > Math.abs(dy) * 1.2f) {
                         swipe(if (dx < 0f) 1 else -1)
                     } else if (!moved) {
-                        tap()
+                        tap(e.x, e.y)
                     }
                 }
             }
@@ -394,6 +449,8 @@ class RainView(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         updateLabel()
+        removeCallbacks(poll)
+        post(poll)
         val a = ValueAnimator.ofFloat(0f, 1f)
         a.duration = 2800L
         a.repeatCount = ValueAnimator.INFINITE
@@ -410,6 +467,7 @@ class RainView(
         anim?.cancel()
         swipeAnim?.cancel()
         removeCallbacks(longRun)
+        removeCallbacks(poll)
         super.onDetachedFromWindow()
     }
 
@@ -429,7 +487,7 @@ class RainView(
         paint.strokeWidth = dens * 1.6f
         paint.color = Color.parseColor("#8A8A8A")
         if (it.pkg != null) {
-            drawAppIcon(canvas, it.pkg, w, h)
+            drawApp(canvas, it.pkg, w, h)
         } else {
             when (it.mode) {
                 Ambient.RAIN -> {
@@ -542,16 +600,79 @@ class RainView(
         }
     }
 
-    private fun drawAppIcon(canvas: Canvas, pkg: String, w: Float, h: Float) {
+    private fun fit(text: String, maxW: Float): String =
+        android.text.TextUtils.ellipsize(text, tp, maxW, android.text.TextUtils.TruncateAt.END).toString()
+
+    /** Music app: upar icon, beech me abhi ka track, niche prev / play-pause / next. */
+    private fun drawApp(canvas: Canvas, pkg: String, w: Float, h: Float) {
         try {
             val d = context.packageManager.getApplicationIcon(pkg)
-            val s = (Math.min(w, h) * 0.42f).toInt()
+            val s = (Math.min(w, h) * 0.2f).toInt()
             val cx = (w / 2f).toInt()
-            val cy = (h * 0.46f).toInt()
+            val cy = (h * 0.20f).toInt()
             d.setBounds(cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2)
             d.draw(canvas)
         } catch (e: Exception) {
         }
+        tp.textAlign = Paint.Align.CENTER
+        tp.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        if (!hasAccess) {
+            tp.color = Color.WHITE
+            tp.textSize = dens * 14f
+            canvas.drawText(fit("Allow notification access", w * 0.88f), w / 2f, h * 0.50f, tp)
+            tp.color = Color.parseColor("#8A8A8A")
+            tp.textSize = dens * 12f
+            canvas.drawText(fit("to see track + controls here", w * 0.88f), w / 2f, h * 0.59f, tp)
+            return
+        }
+        val m = media
+        val title = if (m == null) "Nothing playing" else m.title.ifBlank { "Playing" }
+        val artist = if (m == null) "Tap play to open app" else m.artist
+        tp.color = Color.WHITE
+        tp.textSize = dens * 15f
+        canvas.drawText(fit(title, w * 0.88f), w / 2f, h * 0.44f, tp)
+        tp.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        tp.color = Color.parseColor("#8A8A8A")
+        tp.textSize = dens * 12f
+        canvas.drawText(fit(artist, w * 0.88f), w / 2f, h * 0.52f, tp)
+
+        val y = h * 0.72f
+        val dx = dens * 74f
+        drawSkip(canvas, w / 2f - dx, y, false)
+        drawSkip(canvas, w / 2f + dx, y, true)
+        paint.style = Paint.Style.FILL
+        paint.color = Color.WHITE
+        canvas.drawCircle(w / 2f, y, dens * 24f, paint)
+        paint.color = Color.parseColor("#1D1D1D")
+        val u = dens * 10f
+        val cx = w / 2f
+        if (m != null && m.playing) {
+            canvas.drawRect(cx - u * 0.7f, y - u, cx - u * 0.15f, y + u, paint)
+            canvas.drawRect(cx + u * 0.15f, y - u, cx + u * 0.7f, y + u, paint)
+        } else {
+            path.reset()
+            path.moveTo(cx - u * 0.6f, y - u)
+            path.lineTo(cx - u * 0.6f, y + u)
+            path.lineTo(cx + u, y)
+            path.close()
+            canvas.drawPath(path, paint)
+        }
+    }
+
+    private fun drawSkip(canvas: Canvas, cx: Float, cy: Float, next: Boolean) {
+        paint.style = Paint.Style.FILL
+        paint.color = if (media != null) Color.WHITE else Color.parseColor("#5A5A5A")
+        val u = dens * 10f
+        val d = if (next) 1f else -1f
+        path.reset()
+        path.moveTo(cx - d * u * 0.7f, cy - u)
+        path.lineTo(cx - d * u * 0.7f, cy + u)
+        path.lineTo(cx + d * u * 0.5f, cy)
+        path.close()
+        canvas.drawPath(path, paint)
+        val a = cx + d * u * 0.65f
+        val b = cx + d * u * 0.95f
+        canvas.drawRect(Math.min(a, b), cy - u, Math.max(a, b), cy + u, paint)
     }
 }
 
@@ -667,7 +788,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     private fun swText(): String {
         val e = Store.swElapsed(act)
         val s = e / 1000L
-        return String.format("%d:%02d:%02d.%03d", s / 3600L, (s % 3600L) / 60L, s % 60L, e % 1000L)
+        return String.format("%d:%02d:%02d.%02d", s / 3600L, (s % 3600L) / 60L, s % 60L, (e % 1000L) / 10L)
     }
 
     // stopwatch chalte time milliseconds smooth dikhane ke liye ~30 fps refresh
@@ -777,6 +898,15 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
                 reload()
             }
             .show()
+    }
+
+    // Music ka track + controls dikhane ke liye Notification access chahiye (session se pehle on karo)
+    private fun openAccess() {
+        Toast.makeText(act, "FocusLock ko Notification access do, phir wapas aao", Toast.LENGTH_LONG).show()
+        try {
+            act.startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        } catch (e: Exception) {
+        }
     }
 
     private fun launch(pkg: String) {
@@ -905,7 +1035,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         rainCard.clipToOutline = true
         val rainLabel = smallLabel("TAP TO PLAY")
         lateinit var soundView: RainView
-        soundView = RainView(act, { rainLabel.text = it }, { launch(it) }, { soundMenu { soundView.reload() } })
+        soundView = RainView(act, { rainLabel.text = it }, { launch(it) }, { soundMenu { soundView.reload() } }, { openAccess() })
         rainCard.addView(soundView, FrameLayout.LayoutParams(MATCH, MATCH))
         rainCard.addView(rainLabel, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM))
 
