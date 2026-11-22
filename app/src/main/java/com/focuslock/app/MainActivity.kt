@@ -503,7 +503,7 @@ class MainActivity : Activity() {
         val card = LinearLayout(this)
         leftCard = card
         card.orientation = LinearLayout.VERTICAL
-        card.background = rounded(C_CARD, 28)
+        card.background = CardBg(C_CARD, dp(28).toFloat(), Art.get(this, "branch"))
         card.clipToOutline = true
 
         val content = LinearLayout(this)
@@ -601,7 +601,7 @@ class MainActivity : Activity() {
 
         scene = SceneView(this)
         card.addView(content, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        card.addView(scene, LinearLayout.LayoutParams(MATCH, dp(110)))
+        card.addView(scene, LinearLayout.LayoutParams(MATCH, if (Art.get(this, "scene") != null) dp(170) else dp(110)))
         return card
     }
 
