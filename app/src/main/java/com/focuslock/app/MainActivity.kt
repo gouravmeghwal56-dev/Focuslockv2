@@ -1979,13 +1979,47 @@ class MainActivity : Activity() {
     }
 
     // ---------- Focus (black) screen ----------
+    private var doneShown = false
+
     private fun syncFocus() {
         val on = Store.sessionOn(this)
-        if (on && focus == null) {
+        if (on && focus == null && !doneShown) {
             enterFocus()
         } else if (!on && focus != null) {
+            // timer khud poora hua (until > 0) -> DONE screen; manual exit (until = 0) -> seedha wapas
+            if (Store.until(this) > 0L) showDone() else exitFocus()
+        }
+    }
+
+    private fun showDone() {
+        val f = focus
+        focus = null
+        f?.release()
+        Ambient.stop()
+        doneShown = true
+        val now = Calendar.getInstance()
+        val todayMin = Store.dayMinutes(this, now.get(Calendar.YEAR), now.get(Calendar.MONTH), now.get(Calendar.DAY_OF_MONTH)).toInt()
+        val dow = (now.get(Calendar.DAY_OF_WEEK) + 5) % 7   // Mon = 0 ... Sun = 6
+        val week = IntArray(7) { i ->
+            val c = now.clone() as Calendar
+            c.add(Calendar.DAY_OF_YEAR, i - dow)
+            Store.dayMinutes(this, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).toInt()
+        }
+        val ds = DoneScreen(this, Store.sessionMinutes(this), todayMin, stStreak(), week, dow) {
+            doneShown = false
+            Store.stopSession(this)
             exitFocus()
         }
+        val lp = window.attributes
+        lp.screenBrightness = 0.3f
+        window.attributes = lp
+        window.decorView.systemUiVisibility = 0
+        setContentView(ds.view)
+    }
+
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        focus?.poke()
     }
 
     private fun enterFocus() {
@@ -2002,6 +2036,7 @@ class MainActivity : Activity() {
     }
 
     private fun exitFocus() {
+        focus?.release()
         focus = null
         Ambient.stop()
         val lp = window.attributes
