@@ -1360,7 +1360,7 @@ class HalfScrollView(ctx: Context) : android.widget.ScrollView(ctx) {
 
 
 /** Tile background: optional vertical gradient (selected tiles) and soft hills at the bottom (themes). */
-class TileBg(private val base: Int, private val top: Int, private val hill: Int, private val rPx: Float, private val art: Bitmap? = null) :
+class TileBg(private val base: Int, private val top: Int, private val hill: Int, private val rPx: Float, private val art: Bitmap? = null, private val ridge: Boolean = false) :
     android.graphics.drawable.Drawable() {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
@@ -1395,7 +1395,24 @@ class TileBg(private val base: Int, private val top: Int, private val hill: Int,
         p.color = base
         c.drawRect(rf, p)
         p.shader = null
-        if (hill != 0) {
+        if (ridge && hill != 0) {
+            val far = floatArrayOf(0f, .80f, .14f, .70f, .28f, .79f, .46f, .64f, .64f, .78f, .82f, .68f, 1f, .77f)
+            val near = floatArrayOf(0f, .90f, .20f, .82f, .40f, .91f, .62f, .80f, .82f, .90f, 1f, .84f)
+            val layers = arrayOf(far to 0x26, near to 0x34)
+            for ((pts, a) in layers) {
+                p.color = (hill and 0x00FFFFFF) or (a shl 24)
+                path.reset()
+                path.moveTo(l, t + h)
+                var i = 0
+                while (i < pts.size) {
+                    path.lineTo(l + pts[i] * w, t + pts[i + 1] * h)
+                    i += 2
+                }
+                path.lineTo(l + w, t + h)
+                path.close()
+                c.drawPath(path, p)
+            }
+        } else if (hill != 0) {
             p.color = hill
             path.reset()
             path.moveTo(l, t + h * 0.80f)
