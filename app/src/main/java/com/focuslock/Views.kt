@@ -1399,7 +1399,7 @@ class TileBg(private val base: Int, private val top: Int, private val hill: Int,
         if (ridge && hill != 0) {
             val far = floatArrayOf(0f, .80f, .14f, .70f, .28f, .79f, .46f, .64f, .64f, .78f, .82f, .68f, 1f, .77f)
             val near = floatArrayOf(0f, .90f, .20f, .82f, .40f, .91f, .62f, .80f, .82f, .90f, 1f, .84f)
-            val layers = if (C_THEME_ID == "underwater" || C_THEME_ID == "desert" || C_THEME_ID == "cabin") arrayOf(far to 0x44, near to 0x66) else arrayOf(far to 0x26, near to 0x34)
+            val layers = if (C_THEME_ID in GLASS_THEMES) arrayOf(far to 0x44, near to 0x66) else arrayOf(far to 0x26, near to 0x34)
             for ((pts, a) in layers) {
                 p.color = (hill and 0x00FFFFFF) or (a shl 24)
                 path.reset()
@@ -1489,6 +1489,22 @@ class CardBg(private val fill: Int, private val rPx: Float, private val art: Bit
 }
 
 /** Full-screen background: base colour + theme art scaled to cover, anchored bottom-left. */
+/** Themes that get the glass-tile look + stronger tile hills. */
+val GLASS_THEMES = setOf("underwater", "desert", "cabin", "lake", "autumn", "japan", "rome", "ink", "rain")
+/** Themes whose Custom card is light, so its text stays dark. */
+val LIGHT_CARD_THEMES = setOf("japan", "rome")
+/** Per-theme scene panel fit: [top, right, bottom (fractions of the art), max height (fraction of screen)]. Rain draws its panel as-is. */
+val SCENE_FIT: Map<String, FloatArray> = mapOf(
+    "underwater" to floatArrayOf(0.695f, 0.500f, 1.000f, 0.46f),
+    "desert" to floatArrayOf(0.640f, 0.515f, 1.000f, 0.46f),
+    "cabin" to floatArrayOf(0.085f, 0.605f, 0.978f, 0.46f),
+    "lake" to floatArrayOf(0.585f, 0.505f, 0.980f, 0.46f),
+    "autumn" to floatArrayOf(0.535f, 0.505f, 0.980f, 0.46f),
+    "japan" to floatArrayOf(0.585f, 0.585f, 0.980f, 0.46f),
+    "rome" to floatArrayOf(0.020f, 0.535f, 0.978f, 0.50f),
+    "ink" to floatArrayOf(0.545f, 0.605f, 0.980f, 0.46f)
+)
+
 class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.drawable.Drawable() {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val dst = RectF()
@@ -1505,20 +1521,20 @@ class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.d
         val sh = art.height * sc
         dst.set(b.left.toFloat(), b.bottom - sh, b.left + sw, b.bottom.toFloat())
         p.isFilterBitmap = true
-        if (C_THEME_ID == "underwater" || C_THEME_ID == "desert" || C_THEME_ID == "cabin") {
+        val fit = SCENE_FIT[C_THEME_ID]
+        if (fit != null) {
             // Scene panel (bottom-left of the art) is redrawn smaller so it ends before the right column, with a small bottom margin.
-            val cab = C_THEME_ID == "cabin"
-            val des = C_THEME_ID == "desert"
-            val sTop = (art.height * (if (cab) 0.085f else if (des) 0.64f else 0.695f)).toInt()
-            val sRight = (art.width * (if (cab) 0.605f else if (des) 0.515f else 0.5f)).toInt() + 1
-            val sBot = if (cab) (art.height * 0.978f).toInt() else art.height
+            // fit = [top, right, bottom, maxHeight] as fractions of the art / screen height.
+            val sTop = (art.height * fit[0]).toInt()
+            val sRight = (art.width * fit[1]).toInt() + 1
+            val sBot = (art.height * fit[2]).toInt()
             val full = RectF(dst.left, dst.bottom - (art.height - sTop) * sc, dst.left + sRight * sc, dst.bottom)
             c.save()
             c.clipRect(full, android.graphics.Region.Op.DIFFERENCE)
             c.drawBitmap(art, null, dst, p)
             c.restore()
             val sh2 = (sBot - sTop).toFloat()
-            val k = minOf(w * 0.445f / sRight, h * 0.46f / sh2)
+            val k = minOf(w * 0.445f / sRight, h * fit[3] / sh2)
             val dw = sRight * k
             val dh = sh2 * k
             val bot = b.bottom - h * 0.025f
