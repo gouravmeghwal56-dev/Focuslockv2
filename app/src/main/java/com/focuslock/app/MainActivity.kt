@@ -623,7 +623,7 @@ class MainActivity : Activity() {
         val r = LinearLayout(this)
         r.orientation = if (wide) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         r.gravity = Gravity.CENTER
-        r.background = rounded(Color.parseColor("#FFFFFF"), 32)
+        r.background = rounded(if (Art.get(this, "bg") != null) Color.parseColor("#80FFFFFF") else Color.parseColor("#FFFFFF"), 32)
         r.setPadding(dp(4), dp(4), dp(4), dp(4))
         railBtns.clear()
         for (i in 0..4) {
