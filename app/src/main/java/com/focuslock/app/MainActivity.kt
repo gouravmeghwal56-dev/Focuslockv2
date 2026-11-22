@@ -140,7 +140,8 @@ class MainActivity : Activity() {
         t.text = text
         t.gravity = Gravity.CENTER
         t.textSize = 16f
-        t.setTextColor(if (selected) Color.WHITE else C_TXT)
+        // Art themes use light glass tiles, so the selected state keeps dark text (white would vanish).
+        t.setTextColor(if (selected && Art.get(this, "bg") == null) Color.WHITE else C_TXT)
         t.background = tileBg(selected)
         t.setOnClickListener { onClick() }
         t.setOnTouchListener { v, ev ->
