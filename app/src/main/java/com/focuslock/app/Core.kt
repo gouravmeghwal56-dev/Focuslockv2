@@ -310,7 +310,10 @@ class BlockService : AccessibilityService() {
     private val genericKeys = listOf("reel", "spotlight", "shorts", "short_video", "clips_viewer")
     // Chat / DM screen ke ids: inme hum Reels-block nahi karte (chat khulne do)
     // sirf DM thread ke andar wale ids (nav bar ke ids jaise ngs_chat_icon_container ya direct_tab NAHI)
-    private val chatKeys = listOf("thread_composer", "message_composer", "direct_thread", "direct_text_message", "row_thread")
+    private val chatKeys = listOf(
+        "thread_composer", "message_composer", "direct_thread", "direct_text_message", "row_thread",
+        "inbox_refreshable", "row_inbox", "thread_list"
+    )
 
     /** Chat/DM screen khuli hai? (view ID ke naam se) */
     private fun inChat(root: AccessibilityNodeInfo): Boolean {
@@ -495,16 +498,15 @@ class BlockService : AccessibilityService() {
         return false
     }
 
-    /** Bottom bar ka Home tab dabao (Instagram ka apna navigation, back-stack nahi chhedta). */
-    private fun clickIgHome(root: AccessibilityNodeInfo): Boolean {
-        for (n in igNodes(root, "feed_tab")) if (clickUp(n)) return true
+    private fun clickByDesc(root: AccessibilityNodeInfo, names: List<String>): Boolean {
         val q = ArrayDeque<AccessibilityNodeInfo>()
         q.add(root)
         var cnt = 0
         while (q.isNotEmpty() && cnt < 600) {
             val node = q.removeFirst()
             cnt++
-            if (node.isVisibleToUser && node.contentDescription?.toString()?.trim().equals("Home", true)) {
+            val d = node.contentDescription?.toString()?.trim()?.lowercase()
+            if (d != null && node.isVisibleToUser && d in names) {
                 if (clickUp(node)) return true
             }
             for (i in 0 until node.childCount) {
@@ -515,11 +517,42 @@ class BlockService : AccessibilityService() {
         return false
     }
 
+    /** Bottom bar / side rail ka Home tab dabao (Instagram ka apna navigation, back-stack nahi chhedta). */
+    private fun clickIgHome(root: AccessibilityNodeInfo): Boolean {
+        for (n in igNodes(root, "feed_tab")) if (clickUp(n)) return true
+        return clickByDesc(root, listOf("home"))
+    }
+
+    /** Debug: block hone ke waqt screen pe kya tha, wo list save karo (Detox > Instagram card long-press > Show captured IDs). */
+    private fun saveHitSnapshot(root: AccessibilityNodeInfo, reelsTab: Boolean, viewer: Boolean) {
+        val out = HashSet<String>()
+        out.add("HIT reelsTab=$reelsTab viewer=$viewer")
+        val q = ArrayDeque<AccessibilityNodeInfo>()
+        q.add(root)
+        var n = 0
+        while (q.isNotEmpty() && n < 500 && out.size < 150) {
+            val node = q.removeFirst()
+            n++
+            if (node.isVisibleToUser) {
+                val id = node.viewIdResourceName
+                val flags = (if (node.isClickable) " [click]" else "") + (if (node.isSelected) " [sel]" else "")
+                if (id != null) out.add(id.removePrefix("com.instagram.android:id/") + flags)
+                val d = node.contentDescription?.toString()?.trim()
+                if (!d.isNullOrEmpty() && (node.isSelected || node.isClickable)) out.add("desc:" + d.take(30) + flags)
+            }
+            for (i in 0 until node.childCount) {
+                val ch = node.getChild(i)
+                if (ch != null) q.add(ch)
+            }
+        }
+        Store.dxDbgSave(this, out)
+    }
+
     private fun handleInstagram(root: AccessibilityNodeInfo, now: Long) {
         val dm = resources.displayMetrics
-        // 1) Reels tab bottom bar me selected hai?
-        var reelsTab = igNodes(root, "clips_tab").any { it.isSelected || it.isChecked || it.parent?.isSelected == true }
-        // 2) Poori screen wala Reels viewer (sirf asli viewer, chhote/preload containers nahi)
+        // 1) Reels tab selected hai?
+        val reelsTab = igNodes(root, "clips_tab").any { it.isSelected || it.isChecked || it.parent?.isSelected == true }
+        // 2) Poori screen wala Reels viewer (chhote/preload containers nahi)
         var viewer = false
         for (n in igNodes(root, "clips_viewer_view_pager")) {
             if (!n.isVisibleToUser) continue
@@ -535,7 +568,7 @@ class BlockService : AccessibilityService() {
             return
         }
         if (inChat(root)) return
-        // lagataar 2 baar dikhe tabhi action (beech me page badalte time galti na ho)
+        // lagataar 2 baar dikhe tabhi action (page badalte time galti na ho)
         if (igSeenAt == 0L || now - igSeenAt > 1500L) {
             igSeenAt = now
             handler.postDelayed({ checkDetox("com.instagram.android") }, 450L)
@@ -543,17 +576,27 @@ class BlockService : AccessibilityService() {
         }
         if (now - igSeenAt < 300L) return
         igSeenAt = 0L
+        saveHitSnapshot(root, reelsTab, viewer)
         if (now - dxLastHit < 2500L) dxHits++ else dxHits = 1
         dxLastHit = now
         if (dxHits >= 3) {
+            // 3 baar koshish ke baad bhi Reels: Instagram se bahar (BACK se history nahi chhedte)
             dxHits = 0
             performGlobalAction(GLOBAL_ACTION_HOME)
-        } else {
-            // Reels tab: Home tab dabao. Kisi aur jagah se khuli reel: ek BACK (jaise tum khud karte)
-            val ok = reelsTab && clickIgHome(root)
-            if (!ok) performGlobalAction(GLOBAL_ACTION_BACK)
+            Toast.makeText(this, "Reels blocked", Toast.LENGTH_SHORT).show()
+            return
         }
-        Toast.makeText(this, "Reels blocked", Toast.LENGTH_SHORT).show()
+        var done = false
+        if (reelsTab) done = clickIgHome(root)
+        if (!done && viewer) {
+            done = clickByDesc(root, listOf("back", "close", "navigate up"))
+            // fullscreen reel (tab nahi): sirf pehli koshish me ek BACK, jaise tum khud karte
+            if (!done && dxHits == 1) {
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                done = true
+            }
+        }
+        if (done) Toast.makeText(this, "Reels blocked", Toast.LENGTH_SHORT).show()
     }
 
     // Blocked app khulte hi black focus screen samne aaye
