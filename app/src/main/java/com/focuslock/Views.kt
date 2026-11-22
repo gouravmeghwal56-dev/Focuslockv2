@@ -32,8 +32,8 @@ var C_LINE = Color.parseColor("#C9C2C0")
 // theme extras: filled controls (play, selected tile), soft accent shades
 var C_PRIMARY = Color.parseColor("#403B39")
 var C_SOFT = Color.parseColor("#F2B89C")
-var C_L1 = C_L1
-var C_L2 = C_L2
+var C_L1: Int = Color.parseColor("#F7C4A5")
+var C_L2: Int = Color.parseColor("#FA9A5C")
 
 // ---------- Custom views ----------
 
