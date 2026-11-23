@@ -1275,20 +1275,29 @@ class MainActivity : Activity() {
         panel.setPadding(dp(8), dp(8), dp(8), dp(8))
 
         panel.addView(hrow(bagTab(0), bagTab(1), bagTab(2)), lpV(dp(52)))
-        val list = Store.bag(this, 0).toList().sorted()
+        val slotList = BagSlots.get(this)
+        val filled = slotList.count { it.isNotBlank() }
         val cells = ArrayList<View>()
         for (i in 0 until 6) {
             val cell = FrameLayout(this)
             cell.background = rounded(C_CELL, 20)
             if (i < Store.MAX_BAG_APPS) {
-                if (i < list.size) {
+                val pk = slotList[i]
+                if (pk.isNotBlank()) {
                     val iv = ImageView(this)
-                    iv.setImageDrawable(icon(list[i]))
+                    iv.setImageDrawable(icon(pk))
                     val lp = FrameLayout.LayoutParams(dp(44), dp(44))
                     lp.gravity = Gravity.CENTER
                     cell.addView(iv, lp)
+                } else {
+                    val plus = TextView(this)
+                    plus.text = "+"
+                    plus.textSize = 34f
+                    plus.setTextColor(C_DIMTXT)
+                    plus.gravity = Gravity.CENTER
+                    cell.addView(plus, FrameLayout.LayoutParams(MATCH, MATCH))
                 }
-                cell.setOnClickListener { showPicker() }
+                cell.setOnClickListener { showPicker(i) }
             } else {
                 val lk = IconView(this, IconView.LOCK)
                 lk.tint = C_SOFT
@@ -1306,12 +1315,12 @@ class MainActivity : Activity() {
         col.addView(panel, pl)
 
         col.addView(hrow(
-            tile("Add / remove apps  ${list.size}/${Store.MAX_BAG_APPS}", true) { showPicker() },
+            tile("Add / remove apps  ${filled}/${Store.MAX_BAG_APPS}", true) { showPicker(-1) },
             tile("Clear bag", false) {
                 if (locked()) {
                     lockedToast()
                 } else {
-                    Store.setBag(this, 0, emptySet())
+                    BagSlots.save(this, List(Store.MAX_BAG_APPS) { "" })
                     render()
                     updateLeft()
                 }
@@ -1320,23 +1329,71 @@ class MainActivity : Activity() {
         return col
     }
 
-    private fun showPicker() {
+    private fun showPicker(slot: Int = -1) {
         if (locked()) {
             lockedToast()
             return
         }
-        val set = HashSet(Store.bag(this, 0))
+        val slots = BagSlots.get(this).toMutableList()
+        val target = if (slot in 0 until Store.MAX_BAG_APPS) slot else {
+            val e = slots.indexOf("")
+            if (e >= 0) e else 0
+        }
         var shown: List<App> = allApps
+        val dlg = android.app.Dialog(this)
+        dlg.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
 
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(12), dp(8), dp(12), dp(0))
+        val root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.setPadding(dp(22), dp(12), dp(22), dp(8))
+        val bgd = GradientDrawable()
+        bgd.setColor(C_BG)
+        val rr = dp(28).toFloat()
+        bgd.cornerRadii = floatArrayOf(rr, rr, rr, rr, 0f, 0f, 0f, 0f)
+        root.background = bgd
+
+        val handle = View(this)
+        handle.background = rounded(C_LINE, 3)
+        val hlp = LinearLayout.LayoutParams(dp(40), dp(4))
+        hlp.gravity = Gravity.CENTER_HORIZONTAL
+        root.addView(handle, hlp)
+
+        val head = LinearLayout(this)
+        head.orientation = LinearLayout.HORIZONTAL
+        head.gravity = Gravity.CENTER_VERTICAL
+        val title = TextView(this)
+        title.text = "Pack your bag"
+        title.textSize = 22f
+        title.setTextColor(C_TXT)
+        head.addView(title, LinearLayout.LayoutParams(0, WRAP, 1f))
+        val empty = TextView(this)
+        empty.text = "\u2715  Empty slot"
+        empty.textSize = 14f
+        empty.setTextColor(C_TXT)
+        empty.background = rounded(C_TILE, 20)
+        empty.setPadding(dp(14), dp(9), dp(14), dp(9))
+        empty.setOnClickListener {
+            slots[target] = ""
+            BagSlots.save(this, slots)
+            dlg.dismiss()
+            render()
+            updateLeft()
+        }
+        head.addView(empty, LinearLayout.LayoutParams(WRAP, WRAP))
+        val hl = LinearLayout.LayoutParams(MATCH, WRAP)
+        hl.setMargins(0, dp(14), 0, dp(10))
+        root.addView(head, hl)
+
         val search = EditText(this)
-        search.hint = "Search app"
+        search.hint = "Search apps"
         search.isSingleLine = true
-        col.addView(search)
+        search.textSize = 16f
+        search.background = rounded(C_TILE, 26)
+        search.setPadding(dp(20), dp(12), dp(20), dp(12))
+        root.addView(search, LinearLayout.LayoutParams(MATCH, WRAP))
 
         val lv = ListView(this)
+        lv.divider = null
         val ad = object : BaseAdapter() {
             override fun getCount() = shown.size
             override fun getItem(i: Int): Any = shown[i]
@@ -1346,35 +1403,31 @@ class MainActivity : Activity() {
                 val row = (v as? LinearLayout) ?: LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(8), dp(6), dp(8), dp(6))
+                    setPadding(dp(8), dp(10), dp(8), dp(10))
                     val iv = ImageView(this@MainActivity)
-                    addView(iv, LinearLayout.LayoutParams(dp(40), dp(40)))
+                    addView(iv, LinearLayout.LayoutParams(dp(44), dp(44)))
                     val tv = TextView(this@MainActivity)
-                    tv.textSize = 16f
-                    tv.setPadding(dp(12), 0, dp(8), 0)
+                    tv.textSize = 18f
+                    tv.setTextColor(C_TXT)
+                    tv.setPadding(dp(16), 0, dp(8), 0)
                     addView(tv, LinearLayout.LayoutParams(0, WRAP, 1f))
-                    val cb = CheckBox(this@MainActivity)
-                    cb.isClickable = false
-                    cb.isFocusable = false
-                    addView(cb)
                 }
                 (row.getChildAt(0) as ImageView).setImageDrawable(icon(a.pkg))
                 (row.getChildAt(1) as TextView).text = a.label
-                (row.getChildAt(2) as CheckBox).isChecked = a.pkg in set
                 return row
             }
         }
         lv.adapter = ad
         lv.setOnItemClickListener { _, _, i, _ ->
             val p = shown[i].pkg
-            if (p in set) {
-                set.remove(p)
-            } else if (set.size >= Store.MAX_BAG_APPS) {
-                toast("Bag 1 me max ${Store.MAX_BAG_APPS} apps")
-            } else {
-                set.add(p)
+            for (k in slots.indices) {
+                if (slots[k] == p) slots[k] = ""
             }
-            ad.notifyDataSetChanged()
+            slots[target] = p
+            BagSlots.save(this, slots)
+            dlg.dismiss()
+            render()
+            updateLeft()
         }
         search.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
@@ -1385,29 +1438,18 @@ class MainActivity : Activity() {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
         })
+        root.addView(lv, LinearLayout.LayoutParams(MATCH, 0, 1f))
 
-        val bar = LinearLayout(this)
-        bar.orientation = LinearLayout.HORIZONTAL
-        val bNone = Button(this)
-        bNone.text = "Clear all"
-        bNone.setOnClickListener {
-            set.clear()
-            ad.notifyDataSetChanged()
+        dlg.setContentView(root)
+        val dm = resources.displayMetrics
+        val win = dlg.window
+        if (win != null) {
+            win.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            win.setGravity(Gravity.BOTTOM)
+            win.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            win.setLayout(minOf(dp(560), dm.widthPixels - dp(24)), (dm.heightPixels * 0.82f).toInt())
         }
-        bar.addView(bNone, LinearLayout.LayoutParams(0, WRAP, 1f))
-        col.addView(bar)
-        col.addView(lv, LinearLayout.LayoutParams(MATCH, dp(360)))
-
-        AlertDialog.Builder(this)
-            .setTitle("Bag 1 apps (max ${Store.MAX_BAG_APPS})")
-            .setView(col)
-            .setPositiveButton("Save") { _, _ ->
-                Store.setBag(this, 0, set)
-                render()
-                updateLeft()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        dlg.show()
     }
 
     // ---------- Page 2: Routines (blockit style) ----------
@@ -1760,6 +1802,19 @@ class MainActivity : Activity() {
         return t
     }
 
+    private fun streakTile(top: String, streak: Int): View {
+        val t = statTile(top, "STREAK")
+        t.setPadding(0, dp(34), 0, 0)
+        val box = FrameLayout(this)
+        box.addView(t, FrameLayout.LayoutParams(MATCH, MATCH))
+        val fv = FlameView(this, streak > 0)
+        val lp = FrameLayout.LayoutParams(dp(38), dp(48))
+        lp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        lp.topMargin = dp(12)
+        box.addView(fv, lp)
+        return box
+    }
+
     private fun monthPickerDialog() {
         val now = Calendar.getInstance()
         val root = LinearLayout(this)
@@ -1888,7 +1943,7 @@ class MainActivity : Activity() {
         small.orientation = LinearLayout.HORIZONTAL
         val streak = stStreak()
         val items = listOf(
-            statTile(if (streak == 1) "1 day" else "$streak days", "STREAK"),
+            streakTile(if (streak == 1) "1 day" else "$streak days", streak),
             statTile(hm(best), "BEST DAY"),
             statTile(hm(avg), "AVG / DAY")
         )
