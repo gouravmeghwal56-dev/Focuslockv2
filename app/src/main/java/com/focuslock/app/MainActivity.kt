@@ -245,6 +245,23 @@ class MainActivity : Activity() {
         origUi = window.decorView.systemUiVisibility
     }
 
+    /** Status/navigation bar take the theme colour (no system blue); art themes use the art's own edge colour. */
+    private fun applyBars(bgArt: android.graphics.Bitmap?) {
+        val top = (if (bgArt != null) bgArt.getPixel(bgArt.width / 2, 2) else C_BG) or (0xFF shl 24)
+        val bot = (if (bgArt != null) bgArt.getPixel(bgArt.width / 2, bgArt.height - 3) else C_BG) or (0xFF shl 24)
+        window.statusBarColor = top
+        window.navigationBarColor = bot
+        var ui = window.decorView.systemUiVisibility
+        ui = if (Color.luminance(top) > 0.5f) ui or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+             else ui and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        ui = if (Color.luminance(bot) > 0.5f) ui or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+             else ui and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+        window.decorView.systemUiVisibility = ui
+        origStatus = top
+        origNav = bot
+        origUi = ui
+    }
+
     /** Builds the whole screen from the current C_* colours. Called again for a live theme change. */
     private fun buildUi(fade: Boolean) {
         val wide = isWide
@@ -285,6 +302,7 @@ class MainActivity : Activity() {
         }
         root.addView(body, LinearLayout.LayoutParams(MATCH, 0, 1f))
         normalRoot = root
+        applyBars(bgArt)
         setContentView(root)
         if (fade) {
             root.alpha = 0f
