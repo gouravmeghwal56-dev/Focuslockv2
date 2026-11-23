@@ -201,6 +201,12 @@ object Store {
     fun active(c: Context) = sessionOn(c) || inSchedule(c)
 }
 
+/** Chhoti si "Settings thodi der ke liye khol do" pass (Notification access on karne ke liye). */
+object Pass {
+    @Volatile
+    var settingsUntil = 0L
+}
+
 class BlockService : AccessibilityService() {
     private var lastAt = 0L
     private var homeAt = 0L
@@ -256,6 +262,9 @@ class BlockService : AccessibilityService() {
         }
         if (pkg == imePkg()) return
 
+        // Notification-access screen ko session me thodi der ke liye khulne do (strict me nahi)
+        if (pkg == "com.android.settings" && !Store.strict(this) && System.currentTimeMillis() < Pass.settingsUntil) return
+
         val sel = Store.selected(this)
         var block = if (Store.allowMode(this)) pkg !in sel else pkg in sel
         if (Store.strict(this) && pkg == "com.android.settings") block = true
@@ -266,9 +275,20 @@ class BlockService : AccessibilityService() {
         val now = System.currentTimeMillis()
         if (now - lastAt < 600) return
         lastAt = now
-        performGlobalAction(GLOBAL_ACTION_HOME)
         Toast.makeText(this, "Focus mode ON", Toast.LENGTH_SHORT).show()
-        if (Store.sessionOn(this)) handler.postDelayed({ openFocus() }, 250L)
+        if (Store.sessionOn(this)) {
+            // Seedha focus screen pe lao (home screen ki jhalak nahi). Na aaye to purana tareeka.
+            openFocus()
+            handler.postDelayed({
+                val cur = try { rootInActiveWindow?.packageName?.toString() } catch (e: Exception) { null }
+                if (cur != null && cur != packageName && Store.sessionOn(this)) {
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                    handler.postDelayed({ if (Store.sessionOn(this)) openFocus() }, 250L)
+                }
+            }, 450L)
+        } else {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }
     }
 
     // ---------- Detox: YouTube Shorts / Instagram Reels ----------
