@@ -1419,6 +1419,8 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
             swBtn.invalidate()
         }
 
+        // Dialog khula ho / doosri screen (Settings) upar ho / Notification pass chal raha ho to dim ka timer rok do
+        if (!act.window.decorView.hasWindowFocus() || now < Pass.settingsUntil) lastTouch = now
         if (!dimmed && remSec > 0L && now - lastTouch > IDLE_MS) enterDim()
 
         val sec = (remSec % 60L).toInt()
