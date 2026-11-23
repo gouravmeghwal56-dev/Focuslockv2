@@ -1493,25 +1493,17 @@ class CardBg(private val fill: Int, private val rPx: Float, private val art: Bit
 val GLASS_THEMES = setOf("underwater", "desert", "cabin", "lake", "autumn", "japan", "rome", "ink", "rain", "korea", "spring", "ocean", "santorini", "sakura")
 /** Themes whose Custom card is light, so its text stays dark. */
 val LIGHT_CARD_THEMES = setOf("japan", "rome")
-/** Per-theme scene panel in the art: [top, right, bottom] as fractions of the art. Every panel is drawn into the same left-card footprint. */
+/** Per-theme scene panel fit: [top, right, bottom (fractions of the art), max height (fraction of screen)]. Rain draws its panel as-is. */
 /** Themes whose scene fills the whole left card (rounded, extra cropped). Add a theme id here to use the same look. */
 val SCENE_COVER: Set<String> = setOf("cabin")
 val SCENE_FIT: Map<String, FloatArray> = mapOf(
-    "underwater" to floatArrayOf(0.695f, 0.500f, 1.000f),
-    "cabin" to floatArrayOf(0.085f, 0.6133f, 0.978f),
-    "lake" to floatArrayOf(0.585f, 0.505f, 0.980f),
-    "autumn" to floatArrayOf(0.535f, 0.505f, 0.980f),
-    "japan" to floatArrayOf(0.585f, 0.585f, 0.980f),
-    "rome" to floatArrayOf(0.018f, 0.5432f, 0.978f),
-    "ink" to floatArrayOf(0.545f, 0.605f, 0.980f),
-    "desert" to floatArrayOf(0.700f, 0.451f, 0.980f),
-    "korea" to floatArrayOf(0.550f, 0.460f, 0.975f),
-    "ocean" to floatArrayOf(0.660f, 0.452f, 0.995f),
-    "rain" to floatArrayOf(0.550f, 0.454f, 0.995f),
-    "sakura" to floatArrayOf(0.020f, 0.450f, 0.995f),
-    "santorini" to floatArrayOf(0.520f, 0.455f, 0.978f),
-    "spring" to floatArrayOf(0.560f, 0.451f, 0.972f),
-    "rajasthan" to floatArrayOf(0.550f, 0.590f, 0.975f)
+    "underwater" to floatArrayOf(0.695f, 0.500f, 1.000f, 0.46f),
+    "cabin" to floatArrayOf(0.085f, 0.6133f, 0.978f, 0.90f),
+    "lake" to floatArrayOf(0.585f, 0.505f, 0.980f, 0.46f),
+    "autumn" to floatArrayOf(0.535f, 0.505f, 0.980f, 0.46f),
+    "japan" to floatArrayOf(0.585f, 0.585f, 0.980f, 0.46f),
+    "rome" to floatArrayOf(0.018f, 0.5432f, 0.978f, 0.90f),
+    "ink" to floatArrayOf(0.545f, 0.605f, 0.980f, 0.46f)
 )
 
 class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.drawable.Drawable() {
@@ -1533,71 +1525,44 @@ class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.d
         p.isFilterBitmap = true
         val fit = SCENE_FIT[C_THEME_ID]
         if (fit != null) {
-            // fit = [top, right, bottom] of the scene panel as fractions of the art.
+            // Scene panel (bottom-left of the art) is redrawn smaller so it ends before the right column, with a small bottom margin.
+            // fit = [top, right, bottom, maxHeight] as fractions of the art / screen height.
             val sTop = (art.height * fit[0]).toInt()
             val sRight = (art.width * fit[1]).toInt() + 1
-            val sBot = (art.height * fit[2]).toInt().coerceAtMost(art.height)
-            // 1) rest of the art, with the old panel area cut out (a few px of slack against anti-alias edges)
+            val sBot = (art.height * fit[2]).toInt()
+            // a few px of slack so the old panel edge never peeks through anti-aliasing
             val full = RectF(dst.left - 2f, dst.bottom - (art.height - sTop) * sc - 4f, dst.left + sRight * sc + 6f, dst.bottom + 2f)
             c.save()
             c.clipRect(full, android.graphics.Region.Op.DIFFERENCE)
             c.drawBitmap(art, null, dst, p)
             c.restore()
-            // 2) every theme's scene goes into the SAME left-card footprint: flush left, same width, same bottom, same rounded corners
-            val cl = b.left.toFloat()
-            val cr = b.left + w * 0.4505f
-            val ct = b.top + h * 0.1475f
-            val cb = b.top + h * 0.958f
-            val rad = w * 0.036f
-            val k = (cr - cl) / sRight
-            val ph = (sBot - sTop) * k
-            val clipP = Path()
-            clipP.addRoundRect(RectF(cl, ct, cr, cb), floatArrayOf(0f, 0f, rad, rad, rad, rad, rad, rad), Path.Direction.CW)
-            c.save()
-            c.clipPath(clipP)
-            val fp = Paint(Paint.ANTI_ALIAS_FLAG)
-            fp.style = Paint.Style.FILL
-            fp.color = skyFill(art, sTop, sRight)
-            c.drawRect(cl, ct, cr, cb, fp)
-            val dstP = RectF(cl, cb - ph, cr, cb)
-            val layer = c.saveLayer(cl, ct, cr, cb, null)
-            c.drawBitmap(art, Rect(0, sTop, sRight, sBot), dstP, p)
-            if (dstP.top > ct) {
-                // soft top edge: the panel melts into the sky colour above it
-                val band = h * 0.024f
-                val fade = Paint()
-                fade.shader = LinearGradient(0f, dstP.top, 0f, dstP.top + band, 0x00000000, 0xFF000000.toInt(), Shader.TileMode.CLAMP)
-                fade.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN)
-                c.drawRect(cl, dstP.top, cr, dstP.top + band, fade)
+            val sh2 = (sBot - sTop).toFloat()
+            if (C_THEME_ID in SCENE_COVER) {
+                // Scene fills exactly the left card (same footprint as the default card), extra is cropped, rounded corners.
+                val cl = b.left.toFloat()
+                val cr = b.left + w * 0.4505f
+                val ct = b.top + h * 0.1475f
+                val cb = b.top + h * 0.958f
+                val kk = maxOf((cr - cl) / sRight, (cb - ct) / sh2)
+                val srcW = minOf(sRight, ((cr - cl) / kk).toInt() + 1)
+                val srcH = minOf(sBot - sTop, ((cb - ct) / kk).toInt() + 1)
+                val rad = w * 0.0146f
+                val clipP = Path()
+                clipP.addRoundRect(RectF(cl, ct, cr, cb), floatArrayOf(0f, 0f, rad, rad, rad, rad, 0f, 0f), Path.Direction.CW)
+                c.save()
+                c.clipPath(clipP)
+                c.drawBitmap(art, Rect(0, sBot - srcH, srcW, sBot), RectF(cl, ct, cr, cb), p)
+                c.restore()
+                return
             }
-            c.restoreToCount(layer)
-            c.restore()
+            val k = minOf(w * 0.445f / sRight, h * fit[3] / sh2)
+            val dw = sRight * k
+            val dh = sh2 * k
+            val bot = b.bottom - h * 0.025f
+            c.drawBitmap(art, Rect(0, sTop, sRight, sBot), RectF(b.left.toFloat(), bot - dh, b.left + dw, bot), p)
             return
         }
         c.drawBitmap(art, null, dst, p)
-    }
-
-    private val skyCache = HashMap<String, Int>()
-
-    /** Median colour of the panel's top row: used to fill the card above the scene. */
-    private fun skyFill(art: Bitmap, sTop: Int, sRight: Int): Int {
-        skyCache[C_THEME_ID]?.let { return it }
-        val y = (sTop + 1).coerceIn(0, art.height - 1)
-        val x0 = (sRight * 0.1f).toInt().coerceIn(0, art.width - 1)
-        val x1 = (sRight * 0.9f).toInt().coerceIn(x0, art.width - 1)
-        val rs = ArrayList<Int>()
-        val gs = ArrayList<Int>()
-        val bs = ArrayList<Int>()
-        var x = x0
-        while (x <= x1) {
-            val px = art.getPixel(x, y)
-            rs.add(Color.red(px)); gs.add(Color.green(px)); bs.add(Color.blue(px))
-            x += 4
-        }
-        rs.sort(); gs.sort(); bs.sort()
-        val col = Color.rgb(rs[rs.size / 2], gs[gs.size / 2], bs[bs.size / 2])
-        skyCache[C_THEME_ID] = col
-        return col
     }
 
     override fun setAlpha(alpha: Int) {}
