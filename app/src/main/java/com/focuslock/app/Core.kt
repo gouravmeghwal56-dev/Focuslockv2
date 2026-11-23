@@ -205,6 +205,9 @@ object Store {
 object Pass {
     @Volatile
     var settingsUntil = 0L
+    /** Last time the Notification-access list itself was seen; its confirm dialog opens right after, so allow it briefly. */
+    @Volatile
+    var notifSeenAt = 0L
 }
 
 class BlockService : AccessibilityService() {
@@ -264,9 +267,18 @@ class BlockService : AccessibilityService() {
 
         // Notification-access screen ko session me thodi der ke liye khulne do (strict me nahi)
         // Strict me bhi sirf "Notification access" wali screen khulegi, baaki Settings band
-        if (pkg == "com.android.settings" && System.currentTimeMillis() < Pass.settingsUntil) {
-            val cls = e.className?.toString() ?: ""
-            if (!Store.strict(this) || cls.contains("NotificationAccess") || cls.contains("NotificationListener")) return
+        val nowMs = System.currentTimeMillis()
+        if (nowMs < Pass.settingsUntil) {
+            val isSettings = pkg == "com.android.settings" || pkg.startsWith("com.samsung.android.settings") ||
+                pkg.contains("permissioncontroller")
+            if (isSettings) {
+                val cls = e.className?.toString() ?: ""
+                val onNotifScreen = cls.contains("NotificationAccess") || cls.contains("NotificationListener")
+                if (onNotifScreen) Pass.notifSeenAt = nowMs
+                // The "Allow FocusLock?" confirm dialog has its own window/class, so also allow
+                // anything from Settings for a short while after the Notification-access list was seen.
+                if (!Store.strict(this) || onNotifScreen || nowMs - Pass.notifSeenAt < 20_000L) return
+            }
         }
 
         val sel = Store.selected(this)
