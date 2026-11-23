@@ -1098,8 +1098,12 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     // Music ka track + controls dikhane ke liye Notification access chahiye (session se pehle on karo)
     private fun openAccess() {
         if (Store.sessionOn(act)) {
-            Toast.makeText(act, "Session is running and Settings is blocked. Turn this on before starting a session.", Toast.LENGTH_LONG).show()
-            return
+            if (Store.strict(act)) {
+                Toast.makeText(act, "Strict mode is ON, Settings is blocked. Turn Notification access on before starting.", Toast.LENGTH_LONG).show()
+                return
+            }
+            // Strict nahi hai to 2 minute ke liye Settings khulne do
+            Pass.settingsUntil = System.currentTimeMillis() + 120_000L
         }
         Toast.makeText(act, "Allow Notification access for FocusLock, then come back", Toast.LENGTH_LONG).show()
         try {
