@@ -1494,6 +1494,8 @@ val GLASS_THEMES = setOf("underwater", "desert", "cabin", "lake", "autumn", "jap
 /** Themes whose Custom card is light, so its text stays dark. */
 val LIGHT_CARD_THEMES = setOf("japan", "rome")
 /** Per-theme scene panel fit: [top, right, bottom (fractions of the art), max height (fraction of screen)]. Rain draws its panel as-is. */
+/** Themes whose scene fills the whole left card (rounded, extra cropped). Add a theme id here to use the same look. */
+val SCENE_COVER: Set<String> = setOf("cabin")
 val SCENE_FIT: Map<String, FloatArray> = mapOf(
     "underwater" to floatArrayOf(0.695f, 0.500f, 1.000f, 0.46f),
     "cabin" to floatArrayOf(0.085f, 0.6133f, 0.978f, 0.90f),
@@ -1535,6 +1537,24 @@ class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.d
             c.drawBitmap(art, null, dst, p)
             c.restore()
             val sh2 = (sBot - sTop).toFloat()
+            if (C_THEME_ID in SCENE_COVER) {
+                // Scene fills exactly the left card (same footprint as the default card), extra is cropped, rounded corners.
+                val cl = b.left + w * 0.0156f
+                val cr = b.left + w * 0.4505f
+                val ct = b.top + h * 0.1475f
+                val cb = b.top + h * 0.958f
+                val kk = maxOf((cr - cl) / sRight, (cb - ct) / sh2)
+                val srcW = minOf(sRight, ((cr - cl) / kk).toInt() + 1)
+                val srcH = minOf(sBot - sTop, ((cb - ct) / kk).toInt() + 1)
+                val rad = w * 0.0146f
+                val clipP = Path()
+                clipP.addRoundRect(RectF(cl, ct, cr, cb), rad, rad, Path.Direction.CW)
+                c.save()
+                c.clipPath(clipP)
+                c.drawBitmap(art, Rect(0, sBot - srcH, srcW, sBot), RectF(cl, ct, cr, cb), p)
+                c.restore()
+                return
+            }
             val k = minOf(w * 0.445f / sRight, h * fit[3] / sh2)
             val dw = sRight * k
             val dh = sh2 * k
