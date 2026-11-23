@@ -383,8 +383,8 @@ class RainView(
         val it = items.getOrNull(idx) ?: return
         if (it.pkg != null) {
             if (!hasAccess) {
-                // access nahi hai to bhi app khulna chahiye (music start ho sake); Settings yahan se nahi kholte
-                onLaunch(it.pkg)
+                // Button pe tap = Notification access, baaki jagah = music app kholo
+                if (btnR.contains(x, y)) onAccess() else onLaunch(it.pkg)
                 return
             }
             val w = width.toFloat()
@@ -653,9 +653,17 @@ class RainView(
             tp.color = Color.WHITE
             tp.textSize = dens * 14f
             canvas.drawText(fit("Tap to open and play", w * 0.88f), w / 2f, h * 0.50f, tp)
-            tp.color = Color.parseColor("#8A8A8A")
+            // Saaf button: Notification access on karne ke liye (session ke dauran bhi)
+            val bw = w * 0.80f
+            val bh = dens * 40f
+            val by = h * 0.74f
+            btnR.set(w / 2f - bw / 2f, by - bh / 2f, w / 2f + bw / 2f, by + bh / 2f)
+            paint.style = Paint.Style.FILL
+            paint.color = Color.WHITE
+            canvas.drawRoundRect(btnR, bh / 2f, bh / 2f, paint)
+            tp.color = Color.parseColor("#1D1D1D")
             tp.textSize = dens * 12f
-            canvas.drawText(fit("Long-press: allow access for controls", w * 0.88f), w / 2f, h * 0.59f, tp)
+            canvas.drawText(fit("Allow notification access", bw * 0.9f), w / 2f, by + dens * 4.2f, tp)
             return
         }
         val m = media
@@ -692,6 +700,7 @@ class RainView(
         }
     }
 
+    private val btnR = RectF()
     private val srcR = android.graphics.Rect()
     private val dstR = RectF()
 
@@ -1097,14 +1106,8 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
 
     // Music ka track + controls dikhane ke liye Notification access chahiye (session se pehle on karo)
     private fun openAccess() {
-        if (Store.sessionOn(act)) {
-            if (Store.strict(act)) {
-                Toast.makeText(act, "Strict mode is ON, Settings is blocked. Turn Notification access on before starting.", Toast.LENGTH_LONG).show()
-                return
-            }
-            // Strict nahi hai to 2 minute ke liye Settings khulne do
-            Pass.settingsUntil = System.currentTimeMillis() + 120_000L
-        }
+        // Session ke dauran bhi 2 minute ke liye sirf Notification access screen khulne do
+        Pass.settingsUntil = System.currentTimeMillis() + 120_000L
         Toast.makeText(act, "Allow Notification access for FocusLock, then come back", Toast.LENGTH_LONG).show()
         try {
             act.startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
