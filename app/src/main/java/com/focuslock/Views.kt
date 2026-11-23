@@ -1496,6 +1496,14 @@ val LIGHT_CARD_THEMES = setOf("japan", "rome")
 /** Per-theme scene panel fit: [top, right, bottom (fractions of the art), max height (fraction of screen)]. Rain draws its panel as-is. */
 /** Themes whose scene fills the whole left card (rounded, extra cropped). Add a theme id here to use the same look. */
 val SCENE_COVER: Set<String> = setOf("cabin")
+/** Visual bottom edge of each theme's scene (fraction of the art height) so all scenes can sit on one shared bottom line. Rajasthan and Ink are left as they were. */
+val SCENE_VB: Map<String, Float> = mapOf(
+    "autumn" to 0.962f, "cabin" to 0.966f, "desert" to 0.978f, "japan" to 0.967f, "korea" to 0.963f,
+    "lake" to 0.967f, "ocean" to 0.976f, "rain" to 0.969f, "rome" to 0.973f, "sakura" to 0.999f,
+    "santorini" to 0.969f, "spring" to 0.968f, "underwater" to 0.995f
+)
+/** Themes whose scene ends square at the bottom, so the corner gets rounded. */
+val SCENE_ROUND: Set<String> = setOf("sakura")
 val SCENE_FIT: Map<String, FloatArray> = mapOf(
     "underwater" to floatArrayOf(0.695f, 0.500f, 1.000f, 0.46f),
     "cabin" to floatArrayOf(0.085f, 0.6133f, 0.978f, 0.90f),
@@ -1524,6 +1532,13 @@ class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.d
         dst.set(b.left.toFloat(), b.bottom - sh, b.left + sw, b.bottom.toFloat())
         p.isFilterBitmap = true
         val fit = SCENE_FIT[C_THEME_ID]
+        // Shared bottom line: every theme in SCENE_VB has its scene's bottom edge on this same screen height.
+        val vb = SCENE_VB[C_THEME_ID]
+        val lineY = b.bottom - h * 0.041f
+        if (vb != null && fit == null) {
+            val nb = lineY + (1f - vb) * art.height * sc
+            dst.set(b.left.toFloat(), nb - sh, b.left + sw, nb)
+        }
         if (fit != null) {
             // Scene panel (bottom-left of the art) is redrawn smaller so it ends before the right column, with a small bottom margin.
             // fit = [top, right, bottom, maxHeight] as fractions of the art / screen height.
@@ -1542,7 +1557,11 @@ class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.d
                 val cl = b.left.toFloat()
                 val cr = b.left + w * 0.4505f
                 val ct = b.top + h * 0.1475f
-                val cb = b.top + h * 0.958f
+                var cb = b.top + h * 0.958f
+                if (vb != null) {
+                    val kk0 = maxOf((cr - cl) / sRight, (cb - ct) / sh2)
+                    cb = lineY + (sBot - vb * art.height) * kk0
+                }
                 val kk = maxOf((cr - cl) / sRight, (cb - ct) / sh2)
                 val srcW = minOf(sRight, ((cr - cl) / kk).toInt() + 1)
                 val srcH = minOf(sBot - sTop, ((cb - ct) / kk).toInt() + 1)
@@ -1558,11 +1577,24 @@ class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.d
             val k = minOf(w * 0.445f / sRight, h * fit[3] / sh2)
             val dw = sRight * k
             val dh = sh2 * k
-            val bot = b.bottom - h * 0.025f
+            val bot = if (vb != null) lineY + (sBot - vb * art.height) * k else b.bottom - h * 0.025f
             c.drawBitmap(art, Rect(0, sTop, sRight, sBot), RectF(b.left.toFloat(), bot - dh, b.left + dw, bot), p)
             return
         }
         c.drawBitmap(art, null, dst, p)
+        if (C_THEME_ID in SCENE_ROUND) {
+            // The sky column ends square at the bottom: round its corner with the page colour.
+            val pr = b.left + art.width * 0.45f * sc
+            val rad = w * 0.036f
+            val rr = Path()
+            rr.addRoundRect(RectF(b.left - rad, dst.top, pr, lineY), rad, rad, Path.Direction.CW)
+            c.save()
+            c.clipPath(rr, android.graphics.Region.Op.DIFFERENCE)
+            c.clipRect(pr - rad - 2f, lineY - rad - 2f, pr + 2f, lineY + 2f)
+            p.color = (try { art.getPixel((art.width * 0.55f).toInt(), (art.height * 0.9f).toInt()) } catch (e: Exception) { base }) or (0xFF shl 24)
+            c.drawRect(pr - rad - 2f, lineY - rad - 2f, pr + 2f, lineY + 2f, p)
+            c.restore()
+        }
     }
 
     override fun setAlpha(alpha: Int) {}
