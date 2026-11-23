@@ -263,7 +263,11 @@ class BlockService : AccessibilityService() {
         if (pkg == imePkg()) return
 
         // Notification-access screen ko session me thodi der ke liye khulne do (strict me nahi)
-        if (pkg == "com.android.settings" && !Store.strict(this) && System.currentTimeMillis() < Pass.settingsUntil) return
+        // Strict me bhi sirf "Notification access" wali screen khulegi, baaki Settings band
+        if (pkg == "com.android.settings" && System.currentTimeMillis() < Pass.settingsUntil) {
+            val cls = e.className?.toString() ?: ""
+            if (!Store.strict(this) || cls.contains("NotificationAccess") || cls.contains("NotificationListener")) return
+        }
 
         val sel = Store.selected(this)
         var block = if (Store.allowMode(this)) pkg !in sel else pkg in sel
