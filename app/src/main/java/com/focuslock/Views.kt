@@ -1539,7 +1539,7 @@ class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.d
             val sh2 = (sBot - sTop).toFloat()
             if (C_THEME_ID in SCENE_COVER) {
                 // Scene fills exactly the left card (same footprint as the default card), extra is cropped, rounded corners.
-                val cl = b.left + w * 0.0156f
+                val cl = b.left.toFloat()
                 val cr = b.left + w * 0.4505f
                 val ct = b.top + h * 0.1475f
                 val cb = b.top + h * 0.958f
@@ -1548,7 +1548,7 @@ class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.d
                 val srcH = minOf(sBot - sTop, ((cb - ct) / kk).toInt() + 1)
                 val rad = w * 0.0146f
                 val clipP = Path()
-                clipP.addRoundRect(RectF(cl, ct, cr, cb), rad, rad, Path.Direction.CW)
+                clipP.addRoundRect(RectF(cl, ct, cr, cb), floatArrayOf(0f, 0f, rad, rad, rad, rad, 0f, 0f), Path.Direction.CW)
                 c.save()
                 c.clipPath(clipP)
                 c.drawBitmap(art, Rect(0, sBot - srcH, srcW, sBot), RectF(cl, ct, cr, cb), p)
