@@ -1213,6 +1213,29 @@ class MainActivity : Activity() {
             updateLeft()
             syncFocus()
         }
+        // Music app add hai par Notification access off hai: session se PEHLE allow karne ka popup
+        val ui = getSharedPreferences("focuslock_ui", MODE_PRIVATE)
+        if (Store.soundApps(this).isNotEmpty() && !Media.hasAccess(this) && !ui.getBoolean("noAccessAsk", false)) {
+            AlertDialog.Builder(this)
+                .setTitle("Music controls")
+                .setMessage("Allow Notification access for FocusLock to show the track and play/pause during a session. Once a strict session starts, Settings can't be opened.")
+                .setPositiveButton("Allow") { _, _ ->
+                    try { startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } catch (e: Exception) { }
+                }
+                .setNeutralButton("Start anyway") { _, _ ->
+                    startSessionConfirmed(go)
+                }
+                .setNegativeButton("Don't ask again") { _, _ ->
+                    ui.edit().putBoolean("noAccessAsk", true).apply()
+                    startSessionConfirmed(go)
+                }
+                .show()
+            return
+        }
+        startSessionConfirmed(go)
+    }
+
+    private fun startSessionConfirmed(go: () -> Unit) {
         if (Store.strict(this)) {
             AlertDialog.Builder(this)
                 .setTitle("Strict mode")
