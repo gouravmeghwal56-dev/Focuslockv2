@@ -1496,11 +1496,11 @@ val LIGHT_CARD_THEMES = setOf("japan", "rome")
 /** Per-theme scene panel fit: [top, right, bottom (fractions of the art), max height (fraction of screen)]. Rain draws its panel as-is. */
 val SCENE_FIT: Map<String, FloatArray> = mapOf(
     "underwater" to floatArrayOf(0.695f, 0.500f, 1.000f, 0.46f),
-    "cabin" to floatArrayOf(0.085f, 0.605f, 0.978f, 0.46f),
+    "cabin" to floatArrayOf(0.085f, 0.6133f, 0.978f, 0.90f),
     "lake" to floatArrayOf(0.585f, 0.505f, 0.980f, 0.46f),
     "autumn" to floatArrayOf(0.535f, 0.505f, 0.980f, 0.46f),
     "japan" to floatArrayOf(0.585f, 0.585f, 0.980f, 0.46f),
-    "rome" to floatArrayOf(0.020f, 0.535f, 0.978f, 0.50f),
+    "rome" to floatArrayOf(0.018f, 0.5432f, 0.978f, 0.90f),
     "ink" to floatArrayOf(0.545f, 0.605f, 0.980f, 0.46f)
 )
 
@@ -1512,7 +1512,8 @@ class ArtBg(private val base: Int, private val art: Bitmap) : android.graphics.d
         val b = bounds
         val w = b.width().toFloat()
         val h = b.height().toFloat()
-        p.color = base
+        // Fill with the art's own sky colour so the scaled panel never shows a faint edge
+        p.color = (try { art.getPixel(art.width - 4, art.height / 2) } catch (e: Exception) { base }) or (0xFF shl 24)
         p.style = Paint.Style.FILL
         c.drawRect(b, p)
         val sc = maxOf(w / art.width, h / art.height)
