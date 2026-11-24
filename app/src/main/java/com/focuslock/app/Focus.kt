@@ -852,11 +852,11 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     private var lastSwRunning = false
 
     // Hamara dialog khula ho tab dim ka timer rukta hai (music app / panel upar ho to nahi rukta)
-    private var openDialogs = 0
+    private val openDlgs = ArrayList<AlertDialog>()
     private fun showTracked(b: AlertDialog.Builder) {
         val d = b.create()
-        openDialogs++
-        d.setOnDismissListener { if (openDialogs > 0) openDialogs-- }
+        openDlgs.add(d)
+        d.setOnDismissListener { openDlgs.remove(d) }
         d.show()
     }
 
@@ -1429,8 +1429,12 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         }
 
         // Dialog khula ho / doosri screen (Settings) upar ho / Notification pass chal raha ho to dim ka timer rok do
-        if (openDialogs > 0 || now < Pass.settingsUntil) lastTouch = now
+        // dialog dikh raha ho tabhi dim rokna (atka hua dialog dim ko hamesha ke liye na roke)
+        openDlgs.removeAll { !it.isShowing }
+        if (openDlgs.isNotEmpty() || now < Pass.settingsUntil) lastTouch = now
         if (!dimmed && remSec > 0L && now - lastTouch > IDLE_MS) enterDim()
+        // dim mode mein brightness koi aur reset kare (music app wagairah) to wapas 0.01 kar do
+        if (dimmed && act.window.attributes.screenBrightness != 0.01f) setBrightness(0.01f)
 
         val sec = (remSec % 60L).toInt()
         if (sec != lastSec) {
