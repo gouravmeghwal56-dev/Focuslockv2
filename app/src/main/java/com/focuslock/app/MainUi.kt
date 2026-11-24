@@ -442,24 +442,78 @@ fun MainActivity.goalDialog() {
         .show()
 }
 
-fun MainActivity.stChallengeDays(): Int =
-    getSharedPreferences("fl_ui", android.content.Context.MODE_PRIVATE).getInt("ch_days", 0)
+private val CH_LEVELS = intArrayOf(3, 7, 14, 30, 50, 100, 365)
+private fun chLevelName(d: Int): String = when (d) {
+    3 -> "Spark"
+    7 -> "Week Warrior"
+    14 -> "Momentum"
+    30 -> "Iron Month"
+    50 -> "Deep Work"
+    100 -> "Century Club"
+    365 -> "Year of Focus"
+    else -> "My Challenge"
+}
 
-fun MainActivity.stChallengeStart(): Long =
-    getSharedPreferences("fl_ui", android.content.Context.MODE_PRIVATE).getLong("ch_start", 0L)
+private fun MainActivity.chPrefs() = getSharedPreferences("fl_ui", android.content.Context.MODE_PRIVATE)
 
-/** Challenge aaj se shuru: days = kitne din (0 = band, wapas "This month"). */
-fun MainActivity.startChallenge(days: Int) {
-    val ed = getSharedPreferences("fl_ui", android.content.Context.MODE_PRIVATE).edit()
-    if (days <= 0) {
-        ed.remove("ch_days").remove("ch_start")
+/** Challenge ke steps, jaise [3, 7, 14, 30]. Ek step khatam hote hi agla apne aap chalu. */
+fun MainActivity.stChallengeSteps(): List<Int> {
+    val p = chPrefs()
+    val raw = p.getString("ch_steps", null)
+    if (!raw.isNullOrBlank()) {
+        val l = raw.split(",").mapNotNull { it.trim().toIntOrNull() }.filter { it in 1..365 }
+        if (l.isNotEmpty()) return l
+    }
+    val old = p.getInt("ch_days", 0)   // purana save kiya hua challenge
+    return if (old > 0) listOf(old) else emptyList()
+}
+
+fun MainActivity.stChallengeStart(): Long = chPrefs().getLong("ch_start", 0L)
+
+private fun MainActivity.chDayNo(): Int {
+    val start = stChallengeStart()
+    if (start <= 0L) return 0
+    val tc = Calendar.getInstance()
+    tc.set(Calendar.HOUR_OF_DAY, 0)
+    tc.set(Calendar.MINUTE, 0)
+    tc.set(Calendar.SECOND, 0)
+    tc.set(Calendar.MILLISECOND, 0)
+    return Math.round((tc.timeInMillis - start) / 86400000.0).toInt() + 1
+}
+
+/** Abhi chal raha step (3 pura hua to 7, phir 14...). Start date wahi rehti hai, din 4 se aage gine jaate hain. */
+fun MainActivity.stChallengeDays(): Int {
+    val steps = stChallengeSteps()
+    if (steps.isEmpty() || stChallengeStart() <= 0L) return 0
+    val dayNo = chDayNo()
+    return steps.firstOrNull { dayNo <= it } ?: steps.last()
+}
+
+/** Challenge ka naam + level, jaise "Week Warrior · Level 2/7". */
+fun MainActivity.stChallengeName(): String {
+    val steps = stChallengeSteps()
+    val cur = stChallengeDays()
+    val custom = chPrefs().getBoolean("ch_custom", false)
+    val name = if (custom) "My Challenge" else chLevelName(cur)
+    val lvl = steps.indexOf(cur) + 1
+    return if (steps.size > 1) "$name \u00B7 Level $lvl/${steps.size}" else name
+}
+
+/** Challenge aaj se shuru. steps = [3,7,14...] (khali = band, wapas "This month"). */
+fun MainActivity.startChallenge(steps: List<Int>, custom: Boolean = false) {
+    val ed = chPrefs().edit()
+    if (steps.isEmpty()) {
+        ed.remove("ch_days").remove("ch_start").remove("ch_steps").remove("ch_custom")
     } else {
         val c = Calendar.getInstance()
         c.set(Calendar.HOUR_OF_DAY, 0)
         c.set(Calendar.MINUTE, 0)
         c.set(Calendar.SECOND, 0)
         c.set(Calendar.MILLISECOND, 0)
-        ed.putInt("ch_days", days).putLong("ch_start", c.timeInMillis)
+        ed.remove("ch_days")
+        ed.putString("ch_steps", steps.joinToString(","))
+        ed.putBoolean("ch_custom", custom)
+        ed.putLong("ch_start", c.timeInMillis)
     }
     ed.apply()
     refreshStats()
@@ -467,43 +521,48 @@ fun MainActivity.startChallenge(days: Int) {
 
 fun MainActivity.customChallengeDialog() {
     val et = EditText(this)
-    et.inputType = InputType.TYPE_CLASS_NUMBER
-    et.hint = "Kitne din? (1 - 365)"
-    val box = FrameLayout(this)
+    et.inputType = InputType.TYPE_CLASS_TEXT
+    et.hint = "Jaise 10  ya  5, 15, 40"
+    val note = TextView(this)
+    note.text = "Apne din likho (1 - 365). Ek se zyada likho to ek khatam hote hi agla apne aap chalu ho jayega, gine hue din wahi rahenge."
+    note.textSize = 13f
+    val box = LinearLayout(this)
+    box.orientation = LinearLayout.VERTICAL
     box.setPadding(dp(20), dp(8), dp(20), 0)
-    box.addView(et, FrameLayout.LayoutParams(MATCH, WRAP))
+    box.addView(note, LinearLayout.LayoutParams(MATCH, WRAP))
+    box.addView(et, LinearLayout.LayoutParams(MATCH, WRAP))
     AlertDialog.Builder(this)
         .setTitle("Custom challenge")
         .setView(box)
         .setPositiveButton("Start") { _, _ ->
-            val n = et.text.toString().trim().toIntOrNull() ?: 0
-            if (n < 1 || n > 365) toast("1 se 365 ke beech din likho") else startChallenge(n)
+            val l = et.text.toString().split(",", " ", ";")
+                .mapNotNull { it.trim().toIntOrNull() }
+                .filter { it in 1..365 }
+                .distinct().sorted().take(8)
+            if (l.isEmpty()) toast("1 se 365 ke beech din likho") else startChallenge(l, true)
         }
         .setNegativeButton("Cancel", null)
         .show()
 }
 
 fun MainActivity.challengeDialog() {
-    val items = arrayOf(
-        "This month (default)",
-        "7 days",
-        "21 days",
-        "30 days",
-        "100 days",
-        "Custom days...",
-        "Daily goal..."
-    )
+    val items = ArrayList<String>()
+    items.add("Custom...")
+    items.add("This month (default)")
+    for (d in CH_LEVELS) items.add(chLevelName(d) + "  \u00B7  " + d + " days")
+    items.add("Daily goal...")
     AlertDialog.Builder(this)
         .setTitle("Challenge (aaj se shuru)")
-        .setItems(items) { _, i ->
-            when (i) {
-                0 -> startChallenge(0)
-                1 -> startChallenge(7)
-                2 -> startChallenge(21)
-                3 -> startChallenge(30)
-                4 -> startChallenge(100)
-                5 -> customChallengeDialog()
-                else -> goalDialog()
+        .setItems(items.toTypedArray()) { _, i ->
+            when {
+                i == 0 -> customChallengeDialog()
+                i == 1 -> startChallenge(emptyList())
+                i == items.size - 1 -> goalDialog()
+                else -> {
+                    // chuna hua level + uske upar ke saare levels (pura hone par agla apne aap)
+                    val start = CH_LEVELS[i - 2]
+                    startChallenge(CH_LEVELS.filter { it >= start })
+                }
             }
         }
         .show()
@@ -821,7 +880,7 @@ fun MainActivity.statsPage(): View {
     var gFrac = 0f
     val useBar: Boolean
     if (chDays > 0 && chStart > 0L) {
-        // ---- challenge mode: user ke chune hue din (7 / 30 / 100 / custom)
+        // ---- challenge mode: level ladder (3 -> 7 -> 14 ...) ya custom
         useBar = chDays > 45
         states = IntArray(chDays)
         val base = Calendar.getInstance()
@@ -847,7 +906,7 @@ fun MainActivity.statsPage(): View {
                 if (ok || i != dayNo - 1) elapsed++
             }
         }
-        gTitle = "Challenge \u00B7 $chDays days"
+        gTitle = stChallengeName() + "  \u00B7  $chDays days"
         gSub = if (dayNo > chDays) "Completed  \u00B7  goal " + hm(goal) + "/day"
         else "Day $dayNo of $chDays  \u00B7  goal " + hm(goal) + "/day"
         gFrac = met.toFloat() / chDays
