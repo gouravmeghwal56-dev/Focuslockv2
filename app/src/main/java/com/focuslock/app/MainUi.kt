@@ -340,24 +340,46 @@ fun MainActivity.stGoal(): Int = getSharedPreferences("fl_ui", android.content.C
 
 fun MainActivity.stTrack(): Int = (C_TXT and 0x00FFFFFF) or (0x1A shl 24)
 
-/** Ab tak ka sabse lamba streak (pichle ~3 saal). */
-fun MainActivity.stBestStreak(): Int {
-    val c = Calendar.getInstance()
-    c.add(Calendar.DAY_OF_YEAR, -1095)
-    val end = Calendar.getInstance()
+const val STREAK_MIN_MINUTES = 30   // ek din ki streak ke liye kam se kam itne minute
+const val FREEZE_CAP = 5            // ek saath maximum itne frozen streak
+
+class StreakInfo(val streak: Int, val best: Int, val freezes: Int)
+
+/**
+ * Streak hisaab (din ke hisaab se, purane se naye):
+ * - Din ki streak tab bante jab us din kam se kam 30 min focus ho.
+ * - Har Sunday ko 1 frozen streak milti hai (max FREEZE_CAP).
+ * - Streak chal rahi ho aur din miss ho: frozen streak ho to apne aap use ho jati hai (streak bani rehti hai,
+ *   par wo din gine nahi jate). Frozen na ho to streak 0, agle din se 1.
+ * - Aaj abhi 30 min nahi hue to aaj ko miss nahi ginte.
+ */
+fun MainActivity.stStreakInfo(): StreakInfo {
+    val today = Calendar.getInstance()
+    var started = false
+    var streak = 0
     var best = 0
-    var run = 0
-    while (!c.after(end)) {
-        if (Store.dayMinutes(this, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)) > 0L) {
-            run++
-            if (run > best) best = run
-        } else {
-            run = 0
+    var freezes = 0
+    for (i in 1095 downTo 0) {
+        val c = today.clone() as Calendar
+        c.add(Calendar.DAY_OF_YEAR, -i)
+        val m = Store.dayMinutes(this, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH))
+        if (!started) {
+            if (m <= 0L) continue
+            started = true
         }
-        c.add(Calendar.DAY_OF_YEAR, 1)
+        if (c.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) freezes = minOf(FREEZE_CAP, freezes + 1)
+        if (m >= STREAK_MIN_MINUTES) {
+            streak++
+            if (streak > best) best = streak
+        } else if (i > 0 && streak > 0) {
+            if (freezes > 0) freezes-- else streak = 0
+        }
     }
-    return best
+    return StreakInfo(streak, best, freezes)
 }
+
+/** Ab tak ka sabse lamba streak. */
+fun MainActivity.stBestStreak(): Int = stStreakInfo().best
 
 /** Scope (din/mahina/saal) ki sessions aur un dino ke minutes (jinki sessions count hui). */
 fun MainActivity.stSessions(): Pair<Int, Int> {
@@ -597,8 +619,9 @@ fun MainActivity.statsPage(): View {
     val nowMs = now.timeInMillis
     val goal = stGoal()
     val todayMin = Store.dayMinutes(this, now.get(Calendar.YEAR), now.get(Calendar.MONTH), now.get(Calendar.DAY_OF_MONTH)).toInt()
-    val streak = stStreak()
-    val bestStreak = maxOf(stBestStreak(), streak)
+    val sInfo = stStreakInfo()
+    val streak = sInfo.streak
+    val bestStreak = maxOf(sInfo.best, streak)
 
     // ---- title
     val title = stText("Stats", 26f, C_TXT, true)
@@ -665,6 +688,10 @@ fun MainActivity.statsPage(): View {
     sc.addView(sHead, LinearLayout.LayoutParams(MATCH, WRAP))
     sc.addView(stText(if (streak == 1) "1 day" else "$streak days", 26f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
     sc.addView(stText("Best: " + (if (bestStreak == 1) "1 day" else "$bestStreak days"), 13f, C_DIMTXT), LinearLayout.LayoutParams(WRAP, WRAP))
+    sc.addView(
+        stText("\u2744 " + sInfo.freezes + (if (sInfo.freezes == 1) " freeze" else " freezes") + "  \u00B7  +1 every Sunday", 12f, C_DIMTXT),
+        LinearLayout.LayoutParams(WRAP, WRAP)
+    )
 
     val gl = LinearLayout.LayoutParams(0, MATCH, 1.7f)
     gl.setMargins(0, 0, dp(8), 0)
@@ -878,6 +905,7 @@ fun MainActivity.statsPage(): View {
     var gSub: String
     var gCountText: String
     var gFrac = 0f
+    var monthDays = 0
     val useBar: Boolean
     if (chDays > 0 && chStart > 0L) {
         // ---- challenge mode: level ladder (3 -> 7 -> 14 ...) ya custom
@@ -931,6 +959,7 @@ fun MainActivity.statsPage(): View {
             c.clear()
             c.set(y, m, 1)
             val n = c.getActualMaximum(Calendar.DAY_OF_MONTH)
+            monthDays = n
             states = IntArray(n)
             for (d in 1..n) {
                 c.set(y, m, d)
@@ -951,10 +980,11 @@ fun MainActivity.statsPage(): View {
             if (y == now.get(Calendar.YEAR) && m == now.get(Calendar.MONTH)) "This month"
             else SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(stCal.time)
         }
-        val gp = if (elapsed > 0) met * 100 / elapsed else 0
+        val denom = if (stMode != 2 && monthDays > 0) monthDays else elapsed   // mahine me poore din
+        val gp = if (denom > 0) met * 100 / denom else 0
         gSub = period + "  \u00B7  goal " + hm(goal) + "/day"
-        gFrac = if (elapsed > 0) met.toFloat() / elapsed else 0f
-        gCountText = "$met / $elapsed days  \u00B7  $gp%"
+        gFrac = if (denom > 0) met.toFloat() / denom else 0f
+        gCountText = "$met / $denom days  \u00B7  $gp%"
     }
 
     val gIcon = stIcon(LineIconView.CHECK, C_ORANGE)
