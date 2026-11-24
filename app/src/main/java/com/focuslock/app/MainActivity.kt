@@ -2321,9 +2321,14 @@ class MainActivity : Activity() {
         setContentView(ds.view)
     }
 
+    // Sirf asli touch (ungli) se dim khulega. Media/headset/volume key se nahi.
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) focus?.poke()
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onUserInteraction() {
         super.onUserInteraction()
-        focus?.poke()
     }
 
     private fun enterFocus() {
