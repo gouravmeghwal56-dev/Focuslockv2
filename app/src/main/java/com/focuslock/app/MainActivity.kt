@@ -2315,7 +2315,7 @@ class MainActivity : Activity() {
             exitFocus()
         }
         val lp = window.attributes
-        lp.screenBrightness = 0.3f
+        lp.screenBrightness = -1f
         window.attributes = lp
         window.decorView.systemUiVisibility = 0
         setContentView(ds.view)
@@ -2338,7 +2338,7 @@ class MainActivity : Activity() {
         window.navigationBarColor = Color.BLACK
         window.decorView.systemUiVisibility = 0
         val lp = window.attributes
-        lp.screenBrightness = 0.08f
+        lp.screenBrightness = -1f
         window.attributes = lp
         setContentView(f.view)
         f.update()
