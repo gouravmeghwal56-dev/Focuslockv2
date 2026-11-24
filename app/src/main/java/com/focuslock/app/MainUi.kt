@@ -61,16 +61,33 @@ fun MainActivity.showSettings() {
     val anchor = gearBtn ?: return
     val box = LinearLayout(this)
     box.orientation = LinearLayout.VERTICAL
-    box.setPadding(dp(6), dp(12), dp(6), dp(8))
+    box.setPadding(dp(8), dp(14), dp(8), dp(10))
     val bg = GradientDrawable()
     bg.setColor(Color.WHITE)
-    bg.cornerRadius = dp(26).toFloat()
+    bg.cornerRadius = dp(28).toFloat()
     bg.setStroke(dp(1), Color.parseColor("#ECE6E3"))
     box.background = bg
 
-    val pop = PopupWindow(box, dp(310), WRAP, true)
+    val pop = PopupWindow(box, dp(330), WRAP, true)
     pop.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
-    pop.elevation = dp(10).toFloat()
+    pop.elevation = dp(12).toFloat()
+
+    // ---- header: gear icon + Settings
+    val head = LinearLayout(this)
+    head.orientation = LinearLayout.HORIZONTAL
+    head.gravity = Gravity.CENTER_VERTICAL
+    head.setPadding(dp(14), dp(2), dp(14), dp(8))
+    val hIcon = LineIconView(this, LineIconView.GEAR)
+    hIcon.tint = C_DARK
+    head.addView(hIcon, LinearLayout.LayoutParams(dp(24), dp(24)))
+    val hTv = TextView(this)
+    hTv.text = "Settings"
+    hTv.textSize = 20f
+    hTv.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+    hTv.setTextColor(C_DARK)
+    hTv.setPadding(dp(10), 0, 0, 0)
+    head.addView(hTv, LinearLayout.LayoutParams(WRAP, WRAP))
+    box.addView(head, LinearLayout.LayoutParams(MATCH, WRAP))
 
     fun section(label: String) {
         val s = TextView(this)
@@ -83,11 +100,24 @@ fun MainActivity.showSettings() {
         box.addView(s, LinearLayout.LayoutParams(MATCH, WRAP))
     }
 
-    fun row(title: String, value: String?, dotColor: Int?, onClick: () -> Unit) {
+    fun row(icon: Int, title: String, value: String?, dotColor: Int?, onClick: () -> Unit) {
         val r = LinearLayout(this)
         r.orientation = LinearLayout.HORIZONTAL
         r.gravity = Gravity.CENTER_VERTICAL
-        r.setPadding(dp(14), dp(12), dp(12), dp(12))
+        r.setPadding(dp(10), dp(9), dp(12), dp(9))
+
+        val ib = FrameLayout(this)
+        val ibg = GradientDrawable()
+        ibg.setColor(Color.parseColor("#F6F1EF"))
+        ibg.cornerRadius = dp(12).toFloat()
+        ib.background = ibg
+        val ic = LineIconView(this, icon)
+        ic.tint = C_DARK
+        ib.addView(ic, FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
+        val ibLp = LinearLayout.LayoutParams(dp(38), dp(38))
+        ibLp.setMargins(0, 0, dp(12), 0)
+        r.addView(ib, ibLp)
+
         val t = TextView(this)
         t.text = title
         t.textSize = 16f
@@ -139,12 +169,12 @@ fun MainActivity.showSettings() {
 
     val name = Store.profileName(this)
     section("YOU")
-    row("Profile", if (name.isNullOrBlank()) "Add name" else name, null) { showProfile() }
-    row("Theme & Appearance", null, null) { showThemePicker() }
+    row(LineIconView.PERSON, "Profile", if (name.isNullOrBlank()) "Add name" else name, null) { showProfile() }
+    row(LineIconView.PALETTE, "Theme & Appearance", null, null) { showThemePicker() }
 
     divider()
     section("BLOCKING")
-    row("Notifications", null, null) {
+    row(LineIconView.BELL, "Notifications", null, null) {
         try {
             startActivity(
                 Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
@@ -156,6 +186,7 @@ fun MainActivity.showSettings() {
     }
     val accOn = accEnabled()
     row(
+        LineIconView.ACCESS,
         "Accessibility",
         if (accOn) "ON" else "OFF",
         if (accOn) Color.parseColor("#2E9E5B") else C_ORANGE
@@ -165,11 +196,11 @@ fun MainActivity.showSettings() {
 
     divider()
     section("DATA")
-    row("Backup data", null, null) { startBackup() }
-    row("Restore data", null, null) { startRestore() }
+    row(LineIconView.BACKUP, "Backup data", null, null) { startBackup() }
+    row(LineIconView.RESTORE, "Restore data", null, null) { startRestore() }
 
     divider()
-    row("About FocusLock", null, null) { showAbout() }
+    row(LineIconView.INFO, "About FocusLock", null, null) { showAbout() }
 
     pop.showAsDropDown(anchor, 0, dp(6), Gravity.END)
 }
@@ -411,6 +442,79 @@ fun MainActivity.goalDialog() {
         .show()
 }
 
+fun MainActivity.stChallengeDays(): Int =
+    getSharedPreferences("fl_ui", android.content.Context.MODE_PRIVATE).getInt("ch_days", 0)
+
+fun MainActivity.stChallengeStart(): Long =
+    getSharedPreferences("fl_ui", android.content.Context.MODE_PRIVATE).getLong("ch_start", 0L)
+
+/** Challenge aaj se shuru: days = kitne din (0 = band, wapas "This month"). */
+fun MainActivity.startChallenge(days: Int) {
+    val ed = getSharedPreferences("fl_ui", android.content.Context.MODE_PRIVATE).edit()
+    if (days <= 0) {
+        ed.remove("ch_days").remove("ch_start")
+    } else {
+        val c = Calendar.getInstance()
+        c.set(Calendar.HOUR_OF_DAY, 0)
+        c.set(Calendar.MINUTE, 0)
+        c.set(Calendar.SECOND, 0)
+        c.set(Calendar.MILLISECOND, 0)
+        ed.putInt("ch_days", days).putLong("ch_start", c.timeInMillis)
+    }
+    ed.apply()
+    refreshStats()
+}
+
+fun MainActivity.customChallengeDialog() {
+    val et = EditText(this)
+    et.inputType = InputType.TYPE_CLASS_NUMBER
+    et.hint = "Kitne din? (1 - 365)"
+    val box = FrameLayout(this)
+    box.setPadding(dp(20), dp(8), dp(20), 0)
+    box.addView(et, FrameLayout.LayoutParams(MATCH, WRAP))
+    AlertDialog.Builder(this)
+        .setTitle("Custom challenge")
+        .setView(box)
+        .setPositiveButton("Start") { _, _ ->
+            val n = et.text.toString().trim().toIntOrNull() ?: 0
+            if (n < 1 || n > 365) toast("1 se 365 ke beech din likho") else startChallenge(n)
+        }
+        .setNegativeButton("Cancel", null)
+        .show()
+}
+
+fun MainActivity.challengeDialog() {
+    val items = arrayOf(
+        "This month (default)",
+        "7 days",
+        "21 days",
+        "30 days",
+        "100 days",
+        "Custom days...",
+        "Daily goal..."
+    )
+    AlertDialog.Builder(this)
+        .setTitle("Challenge (aaj se shuru)")
+        .setItems(items) { _, i ->
+            when (i) {
+                0 -> startChallenge(0)
+                1 -> startChallenge(7)
+                2 -> startChallenge(21)
+                3 -> startChallenge(30)
+                4 -> startChallenge(100)
+                5 -> customChallengeDialog()
+                else -> goalDialog()
+            }
+        }
+        .show()
+}
+
+fun MainActivity.stIcon(kind: Int, tint: Int): LineIconView {
+    val v = LineIconView(this, kind)
+    v.tint = tint
+    return v
+}
+
 fun MainActivity.statsPage(): View {
     val sv = ScrollView(this)
     sv.isVerticalScrollBarEnabled = false
@@ -426,6 +530,10 @@ fun MainActivity.statsPage(): View {
         return l
     }
 
+    val dm = resources.displayMetrics
+    val wide = dm.widthPixels / dm.density >= 600f
+    val orangeSoft = (C_ORANGE and 0x00FFFFFF) or (0x26 shl 24)
+
     val now = Calendar.getInstance()
     val nowMs = now.timeInMillis
     val goal = stGoal()
@@ -434,121 +542,119 @@ fun MainActivity.statsPage(): View {
     val bestStreak = maxOf(stBestStreak(), streak)
 
     // ---- title
-    col.addView(stText("Stats", 24f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
+    val title = stText("Stats", 26f, C_TXT, true)
+    title.gravity = Gravity.CENTER
+    col.addView(title, LinearLayout.LayoutParams(MATCH, WRAP))
+    val sub = stText("Your focus progress at a glance", 13f, C_DIMTXT)
+    sub.gravity = Gravity.CENTER
+    col.addView(sub, LinearLayout.LayoutParams(MATCH, WRAP))
 
-    // ================= MAIN CARD =================
-    val main = stCard()
-    main.setPadding(dp(18), dp(16), dp(18), dp(14))
+    // ================= Daily Focus Goal + Streak =================
+    val top = LinearLayout(this)
+    top.orientation = LinearLayout.HORIZONTAL
 
-    // ---- hero: aaj ka focus (left) + streak (right)
-    val hero = LinearLayout(this)
-    hero.orientation = LinearLayout.HORIZONTAL
-    hero.gravity = Gravity.CENTER_VERTICAL
+    val gc = stCard()
+    val gHead = LinearLayout(this)
+    gHead.orientation = LinearLayout.HORIZONTAL
+    gHead.gravity = Gravity.CENTER_VERTICAL
+    gHead.addView(stIcon(LineIconView.TARGET, C_ORANGE), LinearLayout.LayoutParams(dp(22), dp(22)))
+    val gT = stText("Daily Focus Goal", 15f, C_TXT, true)
+    gT.setPadding(dp(10), 0, 0, 0)
+    gHead.addView(gT, LinearLayout.LayoutParams(0, WRAP, 1f))
+    val edit = FrameLayout(this)
+    edit.background = rounded(orangeSoft, 12)
+    edit.addView(stIcon(LineIconView.PENCIL, C_ORANGE), FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
+    edit.setOnClickListener { goalDialog() }
+    gHead.addView(edit, LinearLayout.LayoutParams(dp(36), dp(36)))
+    gc.addView(gHead, LinearLayout.LayoutParams(MATCH, WRAP))
 
-    val heroL = LinearLayout(this)
-    heroL.orientation = LinearLayout.VERTICAL
-    val todayLbl = stText("TODAY", 11f, C_DIMTXT)
-    todayLbl.letterSpacing = 0.14f
-    heroL.addView(todayLbl, LinearLayout.LayoutParams(WRAP, WRAP))
     val gv = SpannableStringBuilder(hm(todayMin))
-    gv.setSpan(AbsoluteSizeSpan(34, true), 0, gv.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    gv.setSpan(AbsoluteSizeSpan(26, true), 0, gv.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
     gv.setSpan(StyleSpan(Typeface.BOLD), 0, gv.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
     val st0 = gv.length
-    gv.append("  / " + hm(goal))
-    gv.setSpan(AbsoluteSizeSpan(15, true), st0, gv.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    gv.append(" / " + hm(goal))
+    gv.setSpan(AbsoluteSizeSpan(16, true), st0, gv.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
     gv.setSpan(ForegroundColorSpan(C_DIMTXT), st0, gv.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-    heroL.addView(stText(gv, 16f, C_TXT), LinearLayout.LayoutParams(WRAP, WRAP))
-    hero.addView(heroL, LinearLayout.LayoutParams(0, WRAP, 1f))
+    val gvLp = LinearLayout.LayoutParams(WRAP, WRAP)
+    gvLp.topMargin = dp(6)
+    gc.addView(stText(gv, 16f, C_TXT), gvLp)
 
-    val heroR = LinearLayout(this)
-    heroR.orientation = LinearLayout.VERTICAL
-    heroR.gravity = Gravity.END
-    val sTop = LinearLayout(this)
-    sTop.orientation = LinearLayout.HORIZONTAL
-    sTop.gravity = Gravity.CENTER_VERTICAL
-    sTop.addView(FlameView(this, streak > 0), LinearLayout.LayoutParams(dp(24), dp(32)))
-    val sTv = stText(if (streak == 1) "1 day" else "$streak days", 20f, C_TXT, true)
-    sTv.setPadding(dp(6), 0, 0, 0)
-    sTop.addView(sTv, LinearLayout.LayoutParams(WRAP, WRAP))
-    heroR.addView(sTop, LinearLayout.LayoutParams(WRAP, WRAP))
-    heroR.addView(stText("best " + (if (bestStreak == 1) "1 day" else "$bestStreak days"), 12f, C_DIMTXT), LinearLayout.LayoutParams(WRAP, WRAP))
-    hero.addView(heroR, LinearLayout.LayoutParams(WRAP, WRAP))
-    main.addView(hero, LinearLayout.LayoutParams(MATCH, WRAP))
-
-    // ---- patli progress bar
+    val pr = LinearLayout(this)
+    pr.orientation = LinearLayout.HORIZONTAL
+    pr.gravity = Gravity.CENTER_VERTICAL
     val pb = ProgressBarView(this)
     pb.fillColor = C_ORANGE
     pb.trackColor = stTrack()
     pb.frac = if (goal > 0) todayMin.toFloat() / goal else 0f
-    val pbLp = LinearLayout.LayoutParams(MATCH, dp(6))
-    pbLp.topMargin = dp(14)
-    main.addView(pb, pbLp)
-
+    pr.addView(pb, LinearLayout.LayoutParams(0, dp(10), 1f))
     val pct = if (goal > 0) minOf(100, todayMin * 100 / goal) else 0
-    val pRow = LinearLayout(this)
-    pRow.orientation = LinearLayout.HORIZONTAL
-    pRow.gravity = Gravity.CENTER_VERTICAL
-    pRow.addView(stText("$pct% of daily goal", 12f, C_DIMTXT), LinearLayout.LayoutParams(0, WRAP, 1f))
-    val edit = stText("Edit goal", 12f, C_ORANGE, true)
-    edit.setPadding(dp(10), dp(6), dp(0), dp(6))
-    edit.setOnClickListener { goalDialog() }
-    pRow.addView(edit, LinearLayout.LayoutParams(WRAP, WRAP))
-    val pRowLp = LinearLayout.LayoutParams(MATCH, WRAP)
-    pRowLp.topMargin = dp(2)
-    main.addView(pRow, pRowLp)
+    val pctTv = stText("$pct%", 14f, C_TXT, true)
+    pctTv.setPadding(dp(12), 0, 0, 0)
+    pr.addView(pctTv, LinearLayout.LayoutParams(WRAP, WRAP))
+    val prLp = LinearLayout.LayoutParams(MATCH, WRAP)
+    prLp.topMargin = dp(8)
+    gc.addView(pr, prLp)
 
-    // ---- Day / Month / Year (chhoti pill)
-    val seg = LinearLayout(this)
-    seg.orientation = LinearLayout.HORIZONTAL
-    seg.gravity = Gravity.CENTER
-    seg.setPadding(dp(3), dp(3), dp(3), dp(3))
-    seg.background = rounded(stTrack(), 22)
-    for ((i, n) in listOf("Day", "Month", "Year").withIndex()) {
-        val on = stMode == i
-        val p = stText(n, 14f, if (on) Color.WHITE else C_TXT, on)
-        p.gravity = Gravity.CENTER
-        p.setPadding(dp(20), dp(7), dp(20), dp(7))
-        if (on) p.background = rounded(C_ORANGE, 20)
-        p.setOnClickListener { stSetMode(i) }
-        seg.addView(p, LinearLayout.LayoutParams(WRAP, WRAP))
-    }
-    val segLp = LinearLayout.LayoutParams(WRAP, WRAP)
-    segLp.gravity = Gravity.CENTER_HORIZONTAL
-    segLp.topMargin = dp(16)
-    main.addView(seg, segLp)
+    val sc = stCard()
+    val sHead = LinearLayout(this)
+    sHead.orientation = LinearLayout.HORIZONTAL
+    sHead.gravity = Gravity.CENTER_VERTICAL
+    sHead.addView(FlameView(this, streak > 0), LinearLayout.LayoutParams(dp(26), dp(34)))
+    val sTitle = stText("Streak", 15f, C_TXT, true)
+    sTitle.setPadding(dp(8), 0, 0, 0)
+    sHead.addView(sTitle, LinearLayout.LayoutParams(WRAP, WRAP))
+    sc.addView(sHead, LinearLayout.LayoutParams(MATCH, WRAP))
+    sc.addView(stText(if (streak == 1) "1 day" else "$streak days", 26f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
+    sc.addView(stText("Best: " + (if (bestStreak == 1) "1 day" else "$bestStreak days"), 13f, C_DIMTXT), LinearLayout.LayoutParams(WRAP, WRAP))
 
-    // ---- <  SATURDAY 21 NOV 2026  >  (bina dibbon ke)
+    val gl = LinearLayout.LayoutParams(0, MATCH, 1.7f)
+    gl.setMargins(0, 0, dp(8), 0)
+    top.addView(gc, gl)
+    top.addView(sc, LinearLayout.LayoutParams(0, MATCH, 1f))
+    col.addView(top, rowLp(WRAP).also { it.topMargin = dp(14) })
+
+    // ================= < Day | Month | Year > =================
     val probe = stCal.clone() as Calendar
     when (stMode) {
         0 -> probe.add(Calendar.DAY_OF_YEAR, 1)
         1 -> { probe.set(Calendar.DAY_OF_MONTH, 1); probe.add(Calendar.MONTH, 1) }
         else -> { probe.set(Calendar.MONTH, 0); probe.set(Calendar.DAY_OF_MONTH, 1); probe.add(Calendar.YEAR, 1) }
     }
-    val bar = LinearLayout(this)
-    bar.orientation = LinearLayout.HORIZONTAL
-    bar.gravity = Gravity.CENTER_VERTICAL
+    val segRow = LinearLayout(this)
+    segRow.orientation = LinearLayout.HORIZONTAL
+    segRow.gravity = Gravity.CENTER
+
     val prev = stText("\u2039", 28f, C_TXT)
     prev.gravity = Gravity.CENTER
     prev.setPadding(dp(16), 0, dp(16), dp(3))
     prev.setOnClickListener { stShift(-1) }
+    segRow.addView(prev, LinearLayout.LayoutParams(WRAP, WRAP))
+
+    val seg = LinearLayout(this)
+    seg.orientation = LinearLayout.HORIZONTAL
+    seg.gravity = Gravity.CENTER
+    seg.setPadding(dp(3), dp(3), dp(3), dp(3))
+    seg.background = rounded(stTrack(), 24)
+    for ((i, n) in listOf("Day", "Month", "Year").withIndex()) {
+        val on = stMode == i
+        val p = stText(n, 15f, if (on) Color.WHITE else C_TXT, on)
+        p.gravity = Gravity.CENTER
+        p.setPadding(dp(22), dp(9), dp(22), dp(9))
+        if (on) p.background = rounded(C_ORANGE, 22)
+        p.setOnClickListener { stSetMode(i) }
+        seg.addView(p, LinearLayout.LayoutParams(WRAP, WRAP))
+    }
+    segRow.addView(seg, LinearLayout.LayoutParams(WRAP, WRAP))
+
     val next = stText("\u203A", 28f, C_TXT)
     next.gravity = Gravity.CENTER
     next.setPadding(dp(16), 0, dp(16), dp(3))
     next.alpha = if (probe.timeInMillis > nowMs) 0.3f else 1f
     next.setOnClickListener { stShift(1) }
-    val lbl = stText(stLabel(), 13f, C_TXT, true)
-    lbl.letterSpacing = 0.08f
-    lbl.gravity = Gravity.CENTER
-    lbl.setPadding(0, dp(10), 0, dp(10))
-    lbl.setOnClickListener { monthPickerDialog() }
-    bar.addView(prev, LinearLayout.LayoutParams(WRAP, WRAP))
-    bar.addView(lbl, LinearLayout.LayoutParams(0, WRAP, 1f))
-    bar.addView(next, LinearLayout.LayoutParams(WRAP, WRAP))
-    val barLp = LinearLayout.LayoutParams(MATCH, WRAP)
-    barLp.topMargin = dp(6)
-    main.addView(bar, barLp)
+    segRow.addView(next, LinearLayout.LayoutParams(WRAP, WRAP))
+    col.addView(segRow, rowLp(WRAP))
 
-    // ---- chart + numbers
+    // ================= chart card =================
     val y = stCal.get(Calendar.YEAR)
     val m = stCal.get(Calendar.MONTH)
     var vals = IntArray(0)
@@ -556,7 +662,8 @@ fun MainActivity.statsPage(): View {
     var future = Int.MAX_VALUE
     var sel = -1
     var pick: ((Int) -> Unit)? = null
-    var rows: List<Pair<String, String>> = emptyList()
+    var chartTitle = ""
+    var headerTotal = 0
 
     when (stMode) {
         0 -> {
@@ -587,11 +694,10 @@ fun MainActivity.statsPage(): View {
                 stCal = cp
                 refreshStats()
             }
-            rows = listOf(
-                Pair(if (stThisPeriodWord() == "TODAY") "Today" else "Selected day", hm(stTotal())),
-                Pair("Week total", hm(vals.sum())),
-                Pair("Best day", hm(vals.maxOrNull() ?: 0))
-            )
+            val weekMs = 7L * 24L * 3600L * 1000L
+            chartTitle = if (nowMs >= starts[0] && nowMs < starts[0] + weekMs) "This Week"
+            else SimpleDateFormat("'Week of' d MMM", Locale.getDefault()).format(Date(starts[0]))
+            headerTotal = vals.sum()
         }
         1 -> {
             val c = Calendar.getInstance()
@@ -606,14 +712,9 @@ fun MainActivity.statsPage(): View {
                 stMode = 0
                 refreshStats()
             }
-            val days = stScopeDays()
-            val best = days.maxOrNull() ?: 0
-            val avg = if (days.isEmpty()) 0 else days.sum() / days.size
-            rows = listOf(
-                Pair("Total focus", hm(stTotal())),
-                Pair("Best day", hm(best)),
-                Pair("Avg / day", hm(avg))
-            )
+            chartTitle = if (y == now.get(Calendar.YEAR) && m == now.get(Calendar.MONTH)) "This Month"
+            else SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(stCal.time)
+            headerTotal = stTotal()
         }
         else -> {
             vals = IntArray(12) { monthSum(y, it) }
@@ -625,26 +726,10 @@ fun MainActivity.statsPage(): View {
                 stMode = 1
                 refreshStats()
             }
-            val upto = if (future == Int.MAX_VALUE) 12 else future
-            var best = 0
-            var sum = 0
-            for (i in 0 until upto) {
-                sum += vals[i]
-                if (vals[i] > best) best = vals[i]
-            }
-            rows = listOf(
-                Pair("Total focus", hm(stTotal())),
-                Pair("Best month", hm(best)),
-                Pair("Avg / month", hm(if (upto > 0) sum / upto else 0))
-            )
+            chartTitle = if (y == now.get(Calendar.YEAR)) "This Year" else y.toString()
+            headerTotal = stTotal()
         }
     }
-
-    val sp = stSessions()
-    rows = rows + listOf(
-        Pair("Sessions", sp.first.toString()),
-        Pair("Avg / session", if (sp.first > 0) hm(sp.second / sp.first) else "\u2014")
-    )
 
     val chart = BarChartView(this)
     chart.barColor = C_ORANGE
@@ -655,101 +740,228 @@ fun MainActivity.statsPage(): View {
     chart.futureFrom = future
     chart.selected = sel
     chart.onPick = pick
-    val chLp = LinearLayout.LayoutParams(MATCH, dp(150))
-    chLp.topMargin = dp(6)
-    main.addView(chart, chLp)
 
-    // numbers: 3 + 2 ek line mein, bina divider ke
-    val numRow1 = LinearLayout(this)
-    numRow1.orientation = LinearLayout.HORIZONTAL
-    val numRow2 = LinearLayout(this)
-    numRow2.orientation = LinearLayout.HORIZONTAL
-    for ((idx, kv) in rows.withIndex()) {
+    val cHead = LinearLayout(this)
+    cHead.orientation = LinearLayout.HORIZONTAL
+    cHead.gravity = Gravity.CENTER_VERTICAL
+    cHead.addView(stIcon(LineIconView.BARS, C_ORANGE), LinearLayout.LayoutParams(dp(20), dp(20)))
+    val cT = stText(chartTitle, 15f, C_TXT, true)
+    cT.setPadding(dp(10), dp(4), dp(10), dp(4))
+    cT.setOnClickListener { monthPickerDialog() }
+    cHead.addView(cT, LinearLayout.LayoutParams(0, WRAP, 1f))
+    cHead.addView(stText(hm(headerTotal), 16f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
+
+    val chartCol = LinearLayout(this)
+    chartCol.orientation = LinearLayout.VERTICAL
+    chartCol.addView(cHead, LinearLayout.LayoutParams(MATCH, WRAP))
+    val chLp = LinearLayout.LayoutParams(MATCH, dp(if (wide) 180 else 160))
+    chLp.topMargin = dp(10)
+    chartCol.addView(chart, chLp)
+
+    // right side: Total / Sessions / Avg (icon ke saath)
+    val sp = stSessions()
+    val firstLbl = if (stMode == 0) (if (stThisPeriodWord() == "TODAY") "Today" else "Selected day") else "Total Focus"
+    val numRows = listOf(
+        Triple(LineIconView.STOPWATCH, firstLbl, hm(stTotal())),
+        Triple(LineIconView.LAYERS, "Sessions", sp.first.toString()),
+        Triple(LineIconView.BARS, "Avg. per Session", if (sp.first > 0) hm(sp.second / sp.first) else "\u2014")
+    )
+    val rowsBox = LinearLayout(this)
+    rowsBox.orientation = LinearLayout.VERTICAL
+    rowsBox.gravity = Gravity.CENTER_VERTICAL
+    for ((i, r) in numRows.withIndex()) {
         val one = LinearLayout(this)
-        one.orientation = LinearLayout.VERTICAL
-        one.addView(stText(kv.first, 11f, C_DIMTXT), LinearLayout.LayoutParams(WRAP, WRAP))
-        one.addView(stText(kv.second, 17f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
-        (if (idx < 3) numRow1 else numRow2).addView(one, LinearLayout.LayoutParams(0, WRAP, 1f))
+        one.orientation = LinearLayout.HORIZONTAL
+        one.gravity = Gravity.CENTER_VERTICAL
+        one.setPadding(0, dp(11), 0, dp(11))
+        one.addView(stIcon(r.first, C_ORANGE), LinearLayout.LayoutParams(dp(22), dp(22)))
+        val k = stText(r.second, 14f, C_TXT)
+        k.setPadding(dp(12), 0, dp(8), 0)
+        one.addView(k, LinearLayout.LayoutParams(0, WRAP, 1f))
+        one.addView(stText(r.third, 16f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
+        rowsBox.addView(one, LinearLayout.LayoutParams(MATCH, WRAP))
+        if (i < numRows.size - 1) {
+            val ln = View(this)
+            ln.setBackgroundColor(stTrack())
+            rowsBox.addView(ln, LinearLayout.LayoutParams(MATCH, dp(1)))
+        }
     }
-    val nr1Lp = LinearLayout.LayoutParams(MATCH, WRAP)
-    nr1Lp.topMargin = dp(14)
-    main.addView(numRow1, nr1Lp)
-    val nr2Lp = LinearLayout.LayoutParams(MATCH, WRAP)
-    nr2Lp.topMargin = dp(10)
-    main.addView(numRow2, nr2Lp)
 
-    col.addView(main, rowLp(WRAP).also { it.topMargin = dp(12) })
+    val cc = stCard()
+    cc.setPadding(dp(18), dp(14), dp(18), dp(12))
+    if (wide) {
+        cc.orientation = LinearLayout.HORIZONTAL
+        cc.addView(chartCol, LinearLayout.LayoutParams(0, WRAP, 1.6f))
+        val dv = View(this)
+        dv.setBackgroundColor(stTrack())
+        val dvLp = LinearLayout.LayoutParams(dp(1), MATCH)
+        dvLp.setMargins(dp(16), dp(4), dp(16), dp(4))
+        cc.addView(dv, dvLp)
+        cc.addView(rowsBox, LinearLayout.LayoutParams(0, MATCH, 1f))
+    } else {
+        cc.addView(chartCol, LinearLayout.LayoutParams(MATCH, WRAP))
+        val dv = View(this)
+        dv.setBackgroundColor(stTrack())
+        val dvLp = LinearLayout.LayoutParams(MATCH, dp(1))
+        dvLp.setMargins(0, dp(10), 0, dp(2))
+        cc.addView(dv, dvLp)
+        cc.addView(rowsBox, LinearLayout.LayoutParams(MATCH, WRAP))
+    }
+    col.addView(cc, rowLp(WRAP))
 
-    // ================= GOAL COMPLETION =================
+    // ================= Goal Completion (custom goal button ke saath) =================
     var met = 0
     var elapsed = 0
     var states = IntArray(0)
-    if (stMode == 2) {
-        for (mm in 0..11) {
-            val c = Calendar.getInstance()
-            c.clear()
-            c.set(y, mm, 1)
-            for (d in 1..c.getActualMaximum(Calendar.DAY_OF_MONTH)) {
-                c.set(y, mm, d)
-                if (c.timeInMillis > nowMs) break
-                elapsed++
-                if (Store.dayMinutes(this, y, mm, d) >= goal) met++
+    val chDays = stChallengeDays()
+    val chStart = stChallengeStart()
+    var gTitle = "Goal Completion"
+    var gSub: String
+    var gCountText: String
+    var gFrac = 0f
+    val useBar: Boolean
+    if (chDays > 0 && chStart > 0L) {
+        // ---- challenge mode: user ke chune hue din (7 / 30 / 100 / custom)
+        useBar = chDays > 45
+        states = IntArray(chDays)
+        val base = Calendar.getInstance()
+        base.timeInMillis = chStart
+        val tc = Calendar.getInstance()
+        tc.set(Calendar.HOUR_OF_DAY, 0)
+        tc.set(Calendar.MINUTE, 0)
+        tc.set(Calendar.SECOND, 0)
+        tc.set(Calendar.MILLISECOND, 0)
+        val dayNo = Math.round((tc.timeInMillis - chStart) / 86400000.0).toInt() + 1
+        for (i in 0 until chDays) {
+            val d = base.clone() as Calendar
+            d.add(Calendar.DAY_OF_YEAR, i)
+            if (d.timeInMillis > nowMs) {
+                states[i] = 2
+            } else {
+                val ok = Store.dayMinutes(this, d.get(Calendar.YEAR), d.get(Calendar.MONTH), d.get(Calendar.DAY_OF_MONTH)) >= goal
+                if (ok) {
+                    met++
+                    states[i] = 1
+                }
+                // aaj ka din tab tak "miss" nahi ginte jab tak goal poora na ho
+                if (ok || i != dayNo - 1) elapsed++
             }
         }
+        gTitle = "Challenge \u00B7 $chDays days"
+        gSub = if (dayNo > chDays) "Completed  \u00B7  goal " + hm(goal) + "/day"
+        else "Day $dayNo of $chDays  \u00B7  goal " + hm(goal) + "/day"
+        gFrac = met.toFloat() / chDays
+        gCountText = "$met / $chDays days  \u00B7  " + (met * 100 / chDays) + "%"
     } else {
-        val c = Calendar.getInstance()
-        c.clear()
-        c.set(y, m, 1)
-        val n = c.getActualMaximum(Calendar.DAY_OF_MONTH)
-        states = IntArray(n)
-        for (d in 1..n) {
-            c.set(y, m, d)
-            if (c.timeInMillis > nowMs) {
-                states[d - 1] = 2
-            } else {
-                elapsed++
-                if (Store.dayMinutes(this, y, m, d) >= goal) {
-                    met++
-                    states[d - 1] = 1
+        // ---- default: pura mahina / saal
+        useBar = stMode == 2
+        if (stMode == 2) {
+            for (mm in 0..11) {
+                val c = Calendar.getInstance()
+                c.clear()
+                c.set(y, mm, 1)
+                for (d in 1..c.getActualMaximum(Calendar.DAY_OF_MONTH)) {
+                    c.set(y, mm, d)
+                    if (c.timeInMillis > nowMs) break
+                    elapsed++
+                    if (Store.dayMinutes(this, y, mm, d) >= goal) met++
+                }
+            }
+        } else {
+            val c = Calendar.getInstance()
+            c.clear()
+            c.set(y, m, 1)
+            val n = c.getActualMaximum(Calendar.DAY_OF_MONTH)
+            states = IntArray(n)
+            for (d in 1..n) {
+                c.set(y, m, d)
+                if (c.timeInMillis > nowMs) {
+                    states[d - 1] = 2
+                } else {
+                    elapsed++
+                    if (Store.dayMinutes(this, y, m, d) >= goal) {
+                        met++
+                        states[d - 1] = 1
+                    }
                 }
             }
         }
+        val period = if (stMode == 2) {
+            if (y == now.get(Calendar.YEAR)) "This year" else y.toString()
+        } else {
+            if (y == now.get(Calendar.YEAR) && m == now.get(Calendar.MONTH)) "This month"
+            else SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(stCal.time)
+        }
+        val gp = if (elapsed > 0) met * 100 / elapsed else 0
+        gSub = period + "  \u00B7  goal " + hm(goal) + "/day"
+        gFrac = if (elapsed > 0) met.toFloat() / elapsed else 0f
+        gCountText = "$met / $elapsed days  \u00B7  $gp%"
     }
-    val gcard = stCard()
-    gcard.setPadding(dp(18), dp(14), dp(18), dp(14))
-    val gTop = LinearLayout(this)
-    gTop.orientation = LinearLayout.HORIZONTAL
-    gTop.gravity = Gravity.CENTER_VERTICAL
-    val period = if (stMode == 2) {
-        if (y == now.get(Calendar.YEAR)) "This year" else y.toString()
-    } else {
-        if (y == now.get(Calendar.YEAR) && m == now.get(Calendar.MONTH)) "This month"
-        else SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(stCal.time)
-    }
+
+    val gIcon = stIcon(LineIconView.CHECK, C_ORANGE)
     val gLeft = LinearLayout(this)
     gLeft.orientation = LinearLayout.VERTICAL
-    gLeft.addView(stText("Goal completion", 15f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
-    gLeft.addView(stText(period, 12f, C_DIMTXT), LinearLayout.LayoutParams(WRAP, WRAP))
-    gTop.addView(gLeft, LinearLayout.LayoutParams(0, WRAP, 1f))
-    val gp = if (elapsed > 0) met * 100 / elapsed else 0
-    gTop.addView(stText("$met / $elapsed days  \u00B7  $gp%", 14f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
-    gcard.addView(gTop, LinearLayout.LayoutParams(MATCH, WRAP))
-    if (stMode == 2) {
-        val gb = ProgressBarView(this)
-        gb.fillColor = C_ORANGE
-        gb.trackColor = stTrack()
-        gb.frac = if (elapsed > 0) met.toFloat() / elapsed else 0f
-        val gbLp = LinearLayout.LayoutParams(MATCH, dp(6))
-        gbLp.topMargin = dp(14)
-        gcard.addView(gb, gbLp)
+    gLeft.addView(stText(gTitle, 15f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
+    gLeft.addView(stText(gSub, 12f, C_DIMTXT), LinearLayout.LayoutParams(WRAP, WRAP))
+    val gCount = stText(gCountText, 14f, C_TXT, true)
+
+    val custom = FrameLayout(this)
+    custom.background = rounded(orangeSoft, 20)
+    custom.addView(stIcon(LineIconView.SLIDERS, C_ORANGE), FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
+    custom.setOnClickListener { challengeDialog() }
+
+    val gBar: View
+    if (useBar) {
+        val pbv = ProgressBarView(this)
+        pbv.fillColor = C_ORANGE
+        pbv.trackColor = stTrack()
+        pbv.frac = gFrac
+        gBar = pbv
     } else {
-        val dv = GoalDotsView(this)
-        dv.fillColor = C_ORANGE
-        dv.trackColor = stTrack()
-        dv.states = states
-        val dvLp2 = LinearLayout.LayoutParams(MATCH, dp(18))
-        dvLp2.topMargin = dp(12)
-        gcard.addView(dv, dvLp2)
+        val dvw = GoalDotsView(this)
+        dvw.fillColor = C_ORANGE
+        dvw.trackColor = stTrack()
+        dvw.states = states
+        gBar = dvw
+    }
+
+    val gcard = stCard()
+    gcard.setPadding(dp(18), dp(14), dp(14), dp(14))
+    if (wide) {
+        val line = LinearLayout(this)
+        line.orientation = LinearLayout.HORIZONTAL
+        line.gravity = Gravity.CENTER_VERTICAL
+        line.addView(gIcon, LinearLayout.LayoutParams(dp(26), dp(26)))
+        val glLp = LinearLayout.LayoutParams(WRAP, WRAP)
+        glLp.setMargins(dp(12), 0, dp(16), 0)
+        line.addView(gLeft, glLp)
+        val barLp = LinearLayout.LayoutParams(0, if (useBar) dp(10) else dp(18), 1f)
+        barLp.setMargins(0, 0, dp(16), 0)
+        line.addView(gBar, barLp)
+        line.addView(gCount, LinearLayout.LayoutParams(WRAP, WRAP))
+        val sep = View(this)
+        sep.setBackgroundColor(stTrack())
+        val sepLp = LinearLayout.LayoutParams(dp(1), dp(30))
+        sepLp.setMargins(dp(14), 0, dp(14), 0)
+        line.addView(sep, sepLp)
+        line.addView(custom, LinearLayout.LayoutParams(dp(40), dp(40)))
+        gcard.addView(line, LinearLayout.LayoutParams(MATCH, WRAP))
+    } else {
+        val line = LinearLayout(this)
+        line.orientation = LinearLayout.HORIZONTAL
+        line.gravity = Gravity.CENTER_VERTICAL
+        line.addView(gIcon, LinearLayout.LayoutParams(dp(26), dp(26)))
+        val glLp = LinearLayout.LayoutParams(0, WRAP, 1f)
+        glLp.setMargins(dp(12), 0, dp(8), 0)
+        line.addView(gLeft, glLp)
+        line.addView(custom, LinearLayout.LayoutParams(dp(40), dp(40)))
+        gcard.addView(line, LinearLayout.LayoutParams(MATCH, WRAP))
+        val cLp = LinearLayout.LayoutParams(MATCH, WRAP)
+        cLp.topMargin = dp(10)
+        gcard.addView(gCount, cLp)
+        val barLp = LinearLayout.LayoutParams(MATCH, if (useBar) dp(10) else dp(18))
+        barLp.topMargin = dp(10)
+        gcard.addView(gBar, barLp)
     }
     col.addView(gcard, rowLp(WRAP))
 
