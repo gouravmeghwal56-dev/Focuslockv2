@@ -2372,6 +2372,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        Pass.settingsUntil = 0L   // Settings se wapas aa gaye: pass khatam, dim wapas normal
         Notif.cancelSetup(this)
         Notif.syncSession(this)
         lastRunning = Store.active(this)
