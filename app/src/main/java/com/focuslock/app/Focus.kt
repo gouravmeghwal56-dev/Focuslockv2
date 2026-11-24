@@ -851,6 +851,15 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     private lateinit var lapBtn: TextView
     private var lastSwRunning = false
 
+    // Hamara dialog khula ho tab dim ka timer rukta hai (music app / panel upar ho to nahi rukta)
+    private var openDialogs = 0
+    private fun showTracked(b: AlertDialog.Builder) {
+        val d = b.create()
+        openDialogs++
+        d.setOnDismissListener { if (openDialogs > 0) openDialogs-- }
+        d.show()
+    }
+
     // ---- dim (drift) mode: kuch der touch na ho to screen dim + dheere hilti rehti hai ----
     private val IDLE_MS = 4_000L
     private val DIM_DIGIT = Color.parseColor("#6F6862")
@@ -1055,10 +1064,10 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
             opts.add("Allow notification access (track + controls)")
             acts.add { openAccess() }
         }
-        AlertDialog.Builder(act)
+        showTracked(AlertDialog.Builder(act)
             .setTitle("Sound tile")
             .setItems(opts.toTypedArray()) { _, i -> acts[i]() }
-            .show()
+            )
     }
 
     private fun pickSoundApp(reload: () -> Unit) {
@@ -1078,7 +1087,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
             Toast.makeText(act, "No apps found", Toast.LENGTH_SHORT).show()
             return
         }
-        AlertDialog.Builder(act)
+        showTracked(AlertDialog.Builder(act)
             .setTitle("Add music app")
             .setItems(apps.map { it.second }.toTypedArray()) { _, w ->
                 Store.addSoundApp(act, apps[w].first)
@@ -1086,7 +1095,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
                 Store.setSndIdx(act, Store.soundApps(act).indexOf(apps[w].first).coerceAtLeast(0))
                 reload()
             }
-            .show()
+            )
     }
 
     private fun removeSoundApp(reload: () -> Unit) {
@@ -1095,13 +1104,13 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         val names = have.map {
             try { pm.getApplicationLabel(pm.getApplicationInfo(it, 0)).toString() } catch (e: Exception) { it }
         }
-        AlertDialog.Builder(act)
+        showTracked(AlertDialog.Builder(act)
             .setTitle("Remove app")
             .setItems(names.toTypedArray()) { _, w ->
                 Store.removeSoundApp(act, have[w])
                 reload()
             }
-            .show()
+            )
     }
 
     // Music ka track + controls dikhane ke liye Notification access chahiye (session se pehle on karo)
@@ -1420,7 +1429,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         }
 
         // Dialog khula ho / doosri screen (Settings) upar ho / Notification pass chal raha ho to dim ka timer rok do
-        if (!act.window.decorView.hasWindowFocus() || now < Pass.settingsUntil) lastTouch = now
+        if (openDialogs > 0 || now < Pass.settingsUntil) lastTouch = now
         if (!dimmed && remSec > 0L && now - lastTouch > IDLE_MS) enterDim()
 
         val sec = (remSec % 60L).toInt()
@@ -1452,7 +1461,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
             Toast.makeText(act, "Strict mode: parachute nahi bacha, timer khatam hone tak ruk", Toast.LENGTH_LONG).show()
             return
         }
-        AlertDialog.Builder(act)
+        showTracked(AlertDialog.Builder(act)
             .setTitle("Parachute use karna hai?")
             .setMessage("Strict session abhi khatam ho jayega. Aaj ka parachute sirf 1 hai, kal naya milega.")
             .setPositiveButton("Haan, exit") { _, _ ->
@@ -1462,6 +1471,6 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
                 }
             }
             .setNegativeButton("Nahi", null)
-            .show()
+            )
     }
 }
