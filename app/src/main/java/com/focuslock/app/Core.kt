@@ -105,7 +105,7 @@ object Store {
     fun setProfileName(c: Context, v: String) { p(c).edit().putString("profile_name", v.trim()).apply() }
 
     // ---------- Mode ----------
-    fun allowMode(c: Context) = p(c).getBoolean("allow", false)
+    fun allowMode(c: Context) = p(c).getBoolean("allow", true)
     fun setAllowMode(c: Context, v: Boolean) { p(c).edit().putBoolean("allow", v).apply() }
     fun strict(c: Context) = p(c).getBoolean("strict", false)
     fun setStrict(c: Context, v: Boolean) { p(c).edit().putBoolean("strict", v).apply() }
