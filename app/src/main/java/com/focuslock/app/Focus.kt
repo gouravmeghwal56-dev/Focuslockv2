@@ -872,7 +872,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     private fun passBlocking(now: Long): Boolean = now < Pass.settingsUntil && !act.hasWindowFocus()
 
     // TEMP DIAGNOSTIC: header ke left me chhota text dikhata hai ki dim kyun nahi ho raha. Theek hone ke baad false kar dena.
-    private val DIM_DEBUG = true
+    private val DIM_DEBUG = false
     private var dbgTv: TextView? = null
     private var lastPokeAt = 0L
     private var pokeCount = 0
