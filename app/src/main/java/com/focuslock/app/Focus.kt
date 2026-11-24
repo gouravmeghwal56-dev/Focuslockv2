@@ -868,6 +868,9 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         return openDlgs.any { now - (dlgAt[it] ?: now) < 60_000L }
     }
 
+    // Settings pass dim tabhi rokta hai jab hum samne nahi hain (Settings khuli hai). Wapas aate hi dim chalu.
+    private fun passBlocking(now: Long): Boolean = now < Pass.settingsUntil && !act.hasWindowFocus()
+
     // TEMP DIAGNOSTIC: header ke left me chhota text dikhata hai ki dim kyun nahi ho raha. Theek hone ke baad false kar dena.
     private val DIM_DEBUG = true
     private var dbgTv: TextView? = null
@@ -912,7 +915,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
             if (!idleOn) return
             val now = System.currentTimeMillis()
             if (!dimmed) {
-                if (dlgBlocking(now) || now < Pass.settingsUntil) {
+                if (dlgBlocking(now) || passBlocking(now)) {
                     lastTouch = now
                 } else {
                     val remSec = ((Store.until(act) - now) / 1000L)
@@ -1491,7 +1494,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
 
         // Dialog khula ho / doosri screen (Settings) upar ho / Notification pass chal raha ho to dim ka timer rok do
         // dialog dikh raha ho tabhi dim rokna (atka hua dialog dim ko hamesha ke liye na roke)
-        if (dlgBlocking(now) || now < Pass.settingsUntil) lastTouch = now
+        if (dlgBlocking(now) || passBlocking(now)) lastTouch = now
         if (!dimmed && remSec > 0L && now - lastTouch > IDLE_MS) enterDim()
         // dim mode mein brightness koi aur reset kare (music app wagairah) to wapas 0.01 kar do
         if (dimmed && act.window.attributes.screenBrightness != 0.01f) setBrightness(0.01f)
