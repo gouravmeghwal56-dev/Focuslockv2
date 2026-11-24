@@ -43,6 +43,12 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.PopupWindow
+import android.widget.NumberPicker
+import android.net.Uri
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.Date
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -95,6 +101,7 @@ class MainActivity : Activity() {
     private lateinit var pillIcon: IconView
     private lateinit var controls: LinearLayout
     private val railBtns = ArrayList<IconView>()
+    private var gearBtn: IconView? = null
     private val tabKinds = intArrayOf(IconView.TIMER, IconView.BAG, IconView.GRID, IconView.BARS, IconView.DETOX)
     private val tabNames = arrayOf("Focus Session", "Bags", "Routines", "Stats", "Detox")
 
@@ -487,17 +494,245 @@ class MainActivity : Activity() {
         return v
     }
 
+    // ---------- Settings: upar right corner se khulta popup ----------
+    private val REQ_BACKUP = 41
+    private val REQ_RESTORE = 42
+
     private fun showSettings() {
+        val anchor = gearBtn ?: return
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(8), dp(10), dp(8), dp(8))
+        val bg = GradientDrawable()
+        bg.setColor(Color.WHITE)
+        bg.cornerRadius = dp(24).toFloat()
+        bg.setStroke(dp(1), Color.parseColor("#E6E0DE"))
+        box.background = bg
+
+        val head = TextView(this)
+        head.text = "Settings"
+        head.textSize = 13f
+        head.letterSpacing = 0.1f
+        head.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        head.setTextColor(C_DIMTXT)
+        head.setPadding(dp(14), dp(4), dp(14), dp(6))
+        box.addView(head, LinearLayout.LayoutParams(MATCH, WRAP))
+
+        val pop = PopupWindow(box, dp(300), WRAP, true)
+        pop.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+
+        fun row(title: String, sub: String?, onClick: () -> Unit) {
+            val r = LinearLayout(this)
+            r.orientation = LinearLayout.VERTICAL
+            r.setPadding(dp(14), dp(11), dp(14), dp(11))
+            val t = TextView(this)
+            t.text = title
+            t.textSize = 16f
+            t.setTextColor(C_DARK)
+            r.addView(t, LinearLayout.LayoutParams(WRAP, WRAP))
+            if (!sub.isNullOrBlank()) {
+                val s = TextView(this)
+                s.text = sub
+                s.textSize = 12f
+                s.setTextColor(C_DIMTXT)
+                r.addView(s, LinearLayout.LayoutParams(WRAP, WRAP))
+            }
+            val rb = GradientDrawable()
+            rb.setColor(Color.TRANSPARENT)
+            rb.cornerRadius = dp(14).toFloat()
+            r.background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.parseColor("#1AFF6A0D")), rb, null
+            )
+            r.setOnClickListener {
+                pop.dismiss()
+                onClick()
+            }
+            box.addView(r, LinearLayout.LayoutParams(MATCH, WRAP))
+        }
+
+        val name = Store.profileName(this)
+        row("Profile", if (name.isNullOrBlank()) "Add your name" else name) { showProfile() }
+        row("Theme & Appearance", "Colors and backgrounds") { showThemePicker() }
+        row("Notifications", "Reminders and session alerts") {
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                )
+            } catch (e: Exception) {
+                toast("Could not open notification settings")
+            }
+        }
+        row("Accessibility", if (accEnabled()) "Blocking is ON" else "Turn on for blocking") {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+        row("Data & Backup", "Backup and restore your data") { showBackupMenu() }
+        row("About FocusLock", null) { showAbout() }
+
+        pop.showAsDropDown(anchor, 0, dp(6), Gravity.END)
+    }
+
+    private fun showAbout() {
+        val ver = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0"
+        } catch (e: Exception) {
+            "1.0"
+        }
         AlertDialog.Builder(this)
-            .setTitle("Settings")
-            .setItems(arrayOf("Profile", "Theme", "Accessibility settings")) { _, i ->
-                when (i) {
-                    0 -> showProfile()
-                    1 -> showThemePicker()
-                    else -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                }
+            .setTitle("About FocusLock")
+            .setMessage("FocusLock\nVersion $ver\n\nBlock distractions, stay focused, build your streak.")
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun showBackupMenu() {
+        AlertDialog.Builder(this)
+            .setTitle("Data & Backup")
+            .setItems(arrayOf("Backup Data", "Restore Data")) { _, i ->
+                if (i == 0) startBackup() else startRestore()
             }
             .show()
+    }
+
+    private fun startBackup() {
+        val fname = "focuslock-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
+        try {
+            val i = Intent(Intent.ACTION_CREATE_DOCUMENT)
+            i.addCategory(Intent.CATEGORY_OPENABLE)
+            i.type = "application/json"
+            i.putExtra(Intent.EXTRA_TITLE, fname)
+            startActivityForResult(i, REQ_BACKUP)
+        } catch (e: Exception) {
+            toast("File picker nahi khula")
+        }
+    }
+
+    private fun startRestore() {
+        if (Store.active(this)) {
+            toast("Session chal rahi hai, restore baad mein karo")
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Restore Data")
+            .setMessage("Backup file ka data abhi ke data ki jagah aa jayega. Continue?")
+            .setPositiveButton("Choose file") { _, _ ->
+                try {
+                    val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
+                    i.addCategory(Intent.CATEGORY_OPENABLE)
+                    i.type = "*/*"
+                    startActivityForResult(i, REQ_RESTORE)
+                } catch (e: Exception) {
+                    toast("File picker nahi khula")
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Saari saved settings/data (SharedPreferences) ek JSON file mein. */
+    private fun backupJson(): String {
+        val prefs = JSONObject()
+        val dir = java.io.File(applicationInfo.dataDir, "shared_prefs")
+        val files = dir.listFiles() ?: emptyArray()
+        for (f in files) {
+            if (!f.name.endsWith(".xml")) continue
+            val pname = f.name.removeSuffix(".xml")
+            val sp = getSharedPreferences(pname, MODE_PRIVATE)
+            val o = JSONObject()
+            for ((k, v) in sp.all) {
+                val e = JSONObject()
+                when (v) {
+                    is Boolean -> { e.put("t", "b"); e.put("v", v) }
+                    is Int -> { e.put("t", "i"); e.put("v", v) }
+                    is Long -> { e.put("t", "l"); e.put("v", v) }
+                    is Float -> { e.put("t", "f"); e.put("v", v.toDouble()) }
+                    is String -> { e.put("t", "s"); e.put("v", v) }
+                    is Set<*> -> {
+                        val a = JSONArray()
+                        for (x in v) a.put(x.toString())
+                        e.put("t", "set"); e.put("v", a)
+                    }
+                    else -> continue
+                }
+                o.put(k, e)
+            }
+            prefs.put(pname, o)
+        }
+        val root = JSONObject()
+        root.put("app", "FocusLock")
+        root.put("version", 1)
+        root.put("prefs", prefs)
+        return root.toString()
+    }
+
+    private fun restoreJson(text: String): Boolean {
+        return try {
+            val root = JSONObject(text)
+            if (root.optString("app") != "FocusLock") return false
+            val prefs = root.getJSONObject("prefs")
+            val names = prefs.keys()
+            while (names.hasNext()) {
+                val pname = names.next()
+                val o = prefs.getJSONObject(pname)
+                val ed = getSharedPreferences(pname, MODE_PRIVATE).edit()
+                ed.clear()
+                val keys = o.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    val e = o.getJSONObject(k)
+                    when (e.getString("t")) {
+                        "b" -> ed.putBoolean(k, e.getBoolean("v"))
+                        "i" -> ed.putInt(k, e.getInt("v"))
+                        "l" -> ed.putLong(k, e.getLong("v"))
+                        "f" -> ed.putFloat(k, e.getDouble("v").toFloat())
+                        "s" -> ed.putString(k, e.getString("v"))
+                        "set" -> {
+                            val a = e.getJSONArray("v")
+                            val s = HashSet<String>()
+                            for (i in 0 until a.length()) s.add(a.getString(i))
+                            ed.putStringSet(k, s)
+                        }
+                    }
+                }
+                ed.commit()
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        val uri: Uri = data?.data ?: return
+        if (resultCode != RESULT_OK) return
+        if (requestCode == REQ_BACKUP) {
+            try {
+                contentResolver.openOutputStream(uri)?.use { it.write(backupJson().toByteArray(Charsets.UTF_8)) }
+                toast("Backup save ho gaya")
+            } catch (e: Exception) {
+                toast("Backup fail ho gaya")
+            }
+        } else if (requestCode == REQ_RESTORE) {
+            val text = try {
+                contentResolver.openInputStream(uri)?.use { String(it.readBytes(), Charsets.UTF_8) }
+            } catch (e: Exception) {
+                null
+            }
+            if (text != null && restoreJson(text)) {
+                toast("Restore ho gaya, app dobara khul rahi hai")
+                ui.postDelayed({
+                    val li = packageManager.getLaunchIntentForPackage(packageName)
+                    if (li != null) {
+                        li.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        startActivity(li)
+                    }
+                    Runtime.getRuntime().exit(0)
+                }, 700L)
+            } else {
+                toast("Ye FocusLock ki backup file nahi lag rahi")
+            }
+        }
     }
 
     private fun showProfile() {
@@ -520,6 +755,7 @@ class MainActivity : Activity() {
         val f = FrameLayout(this)
         val menu = circleBtn(IconView.MENU) { toast("Coming soon") }
         val gear = circleBtn(IconView.GEAR) { showSettings() }
+        gearBtn = gear
         f.addView(menu, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.START or Gravity.CENTER_VERTICAL))
         f.addView(gear, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END or Gravity.CENTER_VERTICAL))
 
@@ -772,6 +1008,7 @@ class MainActivity : Activity() {
     }
 
     private fun updateLeft() {
+        leftCard.visibility = if (tab == 3) View.GONE else View.VISIBLE
         pc.visibility = if (tab == 1 || tab == 4) View.GONE else View.VISIBLE
         detoxBox.visibility = if (tab == 4) View.VISIBLE else View.GONE
         leftCard.background = if (tab != 4 && Art.get(this, "bg") != null) null else rounded(if (tab == 4) C_DXLEFT else C_CARD, 28)
@@ -1896,545 +2133,363 @@ class MainActivity : Activity() {
         dlg.show()
     }
 
-    private fun statsPage(): View {
-        val col = vbox()
-        val total = stTotal()
+    // ---------- Page 3: Stats (naya design: goal, streak, chart, goal completion) ----------
+    private fun stGoal(): Int = getSharedPreferences("fl_ui", MODE_PRIVATE).getInt("goal_min", 180)
 
-        // top bar:  <  NOVEMBER 2026  >
+    private fun stTrack(): Int = (C_TXT and 0x00FFFFFF) or (0x1A shl 24)
+
+    /** Ab tak ka sabse lamba streak (pichle ~3 saal). */
+    private fun stBestStreak(): Int {
+        val c = Calendar.getInstance()
+        c.add(Calendar.DAY_OF_YEAR, -1095)
+        val end = Calendar.getInstance()
+        var best = 0
+        var run = 0
+        while (!c.after(end)) {
+            if (Store.dayMinutes(this, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)) > 0L) {
+                run++
+                if (run > best) best = run
+            } else {
+                run = 0
+            }
+            c.add(Calendar.DAY_OF_YEAR, 1)
+        }
+        return best
+    }
+
+    private fun stText(s: CharSequence, sp: Float, color: Int, bold: Boolean = false): TextView {
+        val t = TextView(this)
+        t.text = s
+        t.textSize = sp
+        t.setTextColor(color)
+        if (bold) t.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        return t
+    }
+
+    private fun stCard(): LinearLayout {
+        val l = LinearLayout(this)
+        l.orientation = LinearLayout.VERTICAL
+        l.background = tileBg(false)
+        l.setPadding(dp(16), dp(12), dp(16), dp(12))
+        return l
+    }
+
+    private fun goalDialog() {
+        val cur = stGoal()
+        val ph = NumberPicker(this)
+        ph.minValue = 0
+        ph.maxValue = 12
+        ph.value = (cur / 60).coerceIn(0, 12)
+        val pm = NumberPicker(this)
+        pm.minValue = 0
+        pm.maxValue = 11
+        pm.displayedValues = Array(12) { String.format("%02d", it * 5) }
+        pm.value = ((cur % 60) / 5).coerceIn(0, 11)
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER
+        row.setPadding(dp(20), dp(12), dp(20), 0)
+        fun lbl(t: String): TextView {
+            val tv = TextView(this)
+            tv.text = t
+            tv.textSize = 16f
+            tv.setPadding(dp(8), 0, dp(16), 0)
+            return tv
+        }
+        row.addView(ph)
+        row.addView(lbl("h"))
+        row.addView(pm)
+        row.addView(lbl("min"))
+        AlertDialog.Builder(this)
+            .setTitle("Daily Focus Goal")
+            .setView(row)
+            .setPositiveButton("Save") { _, _ ->
+                var total = ph.value * 60 + pm.value * 5
+                if (total < 5) total = 5
+                getSharedPreferences("fl_ui", MODE_PRIVATE).edit().putInt("goal_min", total).apply()
+                refreshStats()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun statsPage(): View {
+        val sv = ScrollView(this)
+        sv.isVerticalScrollBarEnabled = false
+        sv.overScrollMode = View.OVER_SCROLL_NEVER
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(dp(2), dp(2), dp(2), dp(8))
+        sv.addView(col, FrameLayout.LayoutParams(MATCH, WRAP))
+
+        fun rowLp(h: Int): LinearLayout.LayoutParams {
+            val l = LinearLayout.LayoutParams(MATCH, h)
+            l.setMargins(0, dp(6), 0, 0)
+            return l
+        }
+
+        val now = Calendar.getInstance()
+        val nowMs = now.timeInMillis
+        val goal = stGoal()
+        val todayMin = Store.dayMinutes(this, now.get(Calendar.YEAR), now.get(Calendar.MONTH), now.get(Calendar.DAY_OF_MONTH)).toInt()
+        val streak = stStreak()
+        val bestStreak = maxOf(stBestStreak(), streak)
+
+        // ---- title
+        col.addView(stText("Stats", 24f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
+        col.addView(stText("Your focus progress at a glance", 13f, C_DIMTXT), LinearLayout.LayoutParams(WRAP, WRAP))
+
+        // ---- Daily Focus Goal + Streak
+        val top = LinearLayout(this)
+        top.orientation = LinearLayout.HORIZONTAL
+
+        val gc = stCard()
+        val gHead = LinearLayout(this)
+        gHead.orientation = LinearLayout.HORIZONTAL
+        gHead.gravity = Gravity.CENTER_VERTICAL
+        gHead.addView(stText("Daily Focus Goal", 15f, C_TXT, true), LinearLayout.LayoutParams(0, WRAP, 1f))
+        val edit = stText("Edit", 13f, C_ORANGE, true)
+        edit.setPadding(dp(12), dp(5), dp(12), dp(5))
+        edit.background = rounded(stTrack(), 14)
+        edit.setOnClickListener { goalDialog() }
+        gHead.addView(edit, LinearLayout.LayoutParams(WRAP, WRAP))
+        gc.addView(gHead, LinearLayout.LayoutParams(MATCH, WRAP))
+
+        val gv = SpannableStringBuilder(hm(todayMin))
+        gv.setSpan(AbsoluteSizeSpan(28, true), 0, gv.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        gv.setSpan(StyleSpan(Typeface.BOLD), 0, gv.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        val st0 = gv.length
+        gv.append("  / " + hm(goal))
+        gv.setSpan(AbsoluteSizeSpan(16, true), st0, gv.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        gv.setSpan(ForegroundColorSpan(C_DIMTXT), st0, gv.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        val gvTv = stText(gv, 16f, C_TXT)
+        gc.addView(gvTv, LinearLayout.LayoutParams(WRAP, WRAP))
+
+        val pr = LinearLayout(this)
+        pr.orientation = LinearLayout.HORIZONTAL
+        pr.gravity = Gravity.CENTER_VERTICAL
+        val pb = ProgressBarView(this)
+        pb.fillColor = C_ORANGE
+        pb.trackColor = stTrack()
+        pb.frac = if (goal > 0) todayMin.toFloat() / goal else 0f
+        pr.addView(pb, LinearLayout.LayoutParams(0, dp(10), 1f))
+        val pct = if (goal > 0) minOf(100, todayMin * 100 / goal) else 0
+        val pctTv = stText("$pct%", 14f, C_TXT, true)
+        pctTv.setPadding(dp(12), 0, 0, 0)
+        pr.addView(pctTv, LinearLayout.LayoutParams(WRAP, WRAP))
+        val prLp = LinearLayout.LayoutParams(MATCH, WRAP)
+        prLp.topMargin = dp(8)
+        gc.addView(pr, prLp)
+
+        val sc = stCard()
+        val sHead = LinearLayout(this)
+        sHead.orientation = LinearLayout.HORIZONTAL
+        sHead.gravity = Gravity.CENTER_VERTICAL
+        val fv = FlameView(this, streak > 0)
+        sHead.addView(fv, LinearLayout.LayoutParams(dp(26), dp(34)))
+        val sTitle = stText("Streak", 15f, C_TXT, true)
+        sTitle.setPadding(dp(8), 0, 0, 0)
+        sHead.addView(sTitle, LinearLayout.LayoutParams(WRAP, WRAP))
+        sc.addView(sHead, LinearLayout.LayoutParams(MATCH, WRAP))
+        sc.addView(stText(if (streak == 1) "1 day" else "$streak days", 28f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
+        sc.addView(stText("Best: " + (if (bestStreak == 1) "1 day" else "$bestStreak days"), 13f, C_DIMTXT), LinearLayout.LayoutParams(WRAP, WRAP))
+
+        val gl = LinearLayout.LayoutParams(0, WRAP, 1.7f)
+        gl.setMargins(0, 0, dp(6), 0)
+        top.addView(gc, gl)
+        top.addView(sc, LinearLayout.LayoutParams(0, MATCH, 1f))
+        val topLp = rowLp(WRAP)
+        topLp.topMargin = dp(12)
+        col.addView(top, topLp)
+
+        // ---- Day / Month / Year
+        val seg = LinearLayout(this)
+        seg.orientation = LinearLayout.HORIZONTAL
+        for ((i, n) in listOf("Day", "Month", "Year").withIndex()) {
+            val t = tile(n, stMode == i) { stSetMode(i) }
+            t.textSize = 15f
+            val lp = LinearLayout.LayoutParams(0, MATCH, 1f)
+            lp.setMargins(dp(3), 0, dp(3), 0)
+            seg.addView(t, lp)
+        }
+        col.addView(seg, rowLp(dp(46)))
+
+        // ---- <  NOVEMBER 2026  >
         val bar = LinearLayout(this)
         bar.orientation = LinearLayout.HORIZONTAL
         val prev = tile("\u2039", false) { stShift(-1) }
-        prev.textSize = 28f
+        prev.textSize = 26f
         val next = tile("\u203A", false) { stShift(1) }
-        next.textSize = 28f
+        next.textSize = 26f
         val probe = stCal.clone() as Calendar
         when (stMode) {
             0 -> probe.add(Calendar.DAY_OF_YEAR, 1)
             1 -> { probe.set(Calendar.DAY_OF_MONTH, 1); probe.add(Calendar.MONTH, 1) }
             else -> { probe.set(Calendar.MONTH, 0); probe.set(Calendar.DAY_OF_MONTH, 1); probe.add(Calendar.YEAR, 1) }
         }
-        next.alpha = if (probe.timeInMillis > System.currentTimeMillis()) 0.3f else 1f
+        next.alpha = if (probe.timeInMillis > nowMs) 0.3f else 1f
         val lbl = tile(stLabel(), false) { monthPickerDialog() }
-        lbl.letterSpacing = 0.1f
+        lbl.letterSpacing = 0.08f
+        lbl.textSize = 14f
         bar.addView(prev, LinearLayout.LayoutParams(dp(56), MATCH))
         val ml = LinearLayout.LayoutParams(0, MATCH, 1f)
         ml.setMargins(dp(6), 0, dp(6), 0)
         bar.addView(lbl, ml)
         bar.addView(next, LinearLayout.LayoutParams(dp(56), MATCH))
-        col.addView(bar, lpV(dp(64)))
+        col.addView(bar, rowLp(dp(46)))
 
-        // middle: Day / Month / Year  |  total + small stats
-        val mid = LinearLayout(this)
-        mid.orientation = LinearLayout.HORIZONTAL
-        val seg = LinearLayout(this)
-        seg.orientation = LinearLayout.VERTICAL
-        for ((i, n) in listOf("Day", "Month", "Year").withIndex()) {
-            seg.addView(tile(n, stMode == i) { stSetMode(i) }, lpV())
-        }
-        val right = LinearLayout(this)
-        right.orientation = LinearLayout.VERTICAL
-        val big = tile(twoLine(hm(total), if (total <= 0) "No focus yet \u00B7 start a session" else stThisPeriodWord()), true) {}
-        right.addView(big, lpV())
+        // ---- chart + numbers
+        val y = stCal.get(Calendar.YEAR)
+        val m = stCal.get(Calendar.MONTH)
+        var vals = IntArray(0)
+        var labels: Array<String> = emptyArray()
+        var future = Int.MAX_VALUE
+        var sel = -1
+        var pick: ((Int) -> Unit)? = null
+        var rows: List<Pair<String, String>> = emptyList()
 
-        val days = stScopeDays()
-        val best = days.maxOrNull() ?: 0
-        val avg = if (days.isEmpty()) 0 else days.sum() / days.size
-        val small = LinearLayout(this)
-        small.orientation = LinearLayout.HORIZONTAL
-        val streak = stStreak()
-        val items = listOf(
-            streakTile(if (streak == 1) "1 day" else "$streak days", streak),
-            statTile(hm(best), "BEST DAY"),
-            statTile(hm(avg), "AVG / DAY")
-        )
-        for (t in items) {
-            val lp = LinearLayout.LayoutParams(0, MATCH, 1f)
-            lp.setMargins(dp(3), 0, dp(3), 0)
-            small.addView(t, lp)
-        }
-        right.addView(small, lpV())
-
-        val sl = LinearLayout.LayoutParams(0, MATCH, 1f)
-        sl.setMargins(0, 0, dp(6), 0)
-        mid.addView(seg, sl)
-        mid.addView(right, LinearLayout.LayoutParams(0, MATCH, 3f))
-        col.addView(mid, LinearLayout.LayoutParams(MATCH, 0, 1f))
-
-        val foot = tile("Minutes are counted when a timer starts", false) {}
-        foot.textSize = 13f
-        col.addView(foot, lpV(dp(48)))
-        return col
-    }
-
-    // ---------- Page 4: Detox (block doomscrolling) ----------
-    private val C_DXLEFT = Color.parseColor("#FCFAFA")
-    private val C_DXPANEL = Color.parseColor("#EBE6E6")
-    private val C_DXCARD = Color.parseColor("#F3EFEF")
-
-    private fun appLabel(pkg: String): String = allApps.firstOrNull { it.pkg == pkg }?.label ?: pkg
-
-    private fun detoxCard(title: String, pkg: String, on: Boolean, sub: String?, onLong: (() -> Unit)?, onClick: () -> Unit): View {
-        val card = LinearLayout(this)
-        card.orientation = LinearLayout.HORIZONTAL
-        card.gravity = Gravity.CENTER_VERTICAL
-        card.background = rounded(if (on) C_ORANGE else C_DXCARD, 26)
-        card.setPadding(dp(22), dp(10), dp(22), dp(10))
-        val iv = ImageView(this)
-        iv.setImageDrawable(icon(pkg))
-        card.addView(iv, LinearLayout.LayoutParams(dp(54), dp(54)))
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(18), 0, 0, 0)
-        val t = TextView(this)
-        t.text = title
-        t.textSize = 22f
-        t.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        t.setTextColor(if (on) Color.WHITE else C_TXT)
-        t.maxLines = 1
-        val st = TextView(this)
-        st.text = sub ?: (if (on) "BLOCKED" else "ALLOWED")
-        st.textSize = 12f
-        st.letterSpacing = 0.25f
-        st.setTextColor(if (on) Color.WHITE else C_DIMTXT)
-        col.addView(t)
-        col.addView(st)
-        card.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
-        card.setOnClickListener { onClick() }
-        if (onLong != null) {
-            card.setOnLongClickListener {
-                onLong()
-                true
-            }
-        }
-        card.setOnTouchListener { v, ev ->
-            when (ev.action) {
-                MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.98f).scaleY(0.98f).setDuration(90).start()
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
-            }
-            false
-        }
-        return card
-    }
-
-    // ScrollView aur list ek hi rehte hain, render() par sirf cards dobara bharte hain -> scroll position nahi hilti
-    private var dxSv: HalfScrollView? = null
-    private var dxList: LinearLayout? = null
-
-    private fun detoxPage(): View {
-        val col = vbox()
-        if (!accEnabled()) {
-            val b = tile("Accessibility OFF  \u00B7  tap to turn ON", false) {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
-            b.textSize = 14f
-            b.setTextColor(Color.WHITE)
-            b.background = rounded(C_ORANGE, 16)
-            col.addView(b, lpV(dp(52)))
-        }
-
-        // header: Block Doomscrolling
-        val head = LinearLayout(this)
-        head.orientation = LinearLayout.HORIZONTAL
-        head.gravity = Gravity.CENTER_VERTICAL
-        head.background = rounded(C_DXPANEL, 24)
-        head.setPadding(dp(14), dp(6), dp(14), dp(6))
-        val hi = IconView(this, IconView.INFINITY)
-        hi.tint = Color.WHITE
-        hi.setPadding(dp(8), dp(8), dp(8), dp(8))
-        hi.background = rounded(C_ORANGE, 12)
-        head.addView(hi, LinearLayout.LayoutParams(dp(42), dp(42)))
-        val ht = TextView(this)
-        ht.text = "Block Doomscrolling"
-        ht.textSize = 22f
-        ht.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        ht.setTextColor(C_TXT)
-        ht.setPadding(dp(16), 0, 0, 0)
-        head.addView(ht, LinearLayout.LayoutParams(WRAP, WRAP))
-        val hl = LinearLayout.LayoutParams(MATCH, dp(60))
-        hl.bottomMargin = dp(8)
-        col.addView(head, hl)
-
-        // list of cards (2 visible, swipe up/down for more)
-        val sv = dxSv ?: HalfScrollView(this).also {
-            it.isVerticalScrollBarEnabled = false
-            dxSv = it
-        }
-        val list = dxList ?: LinearLayout(this).also {
-            it.orientation = LinearLayout.VERTICAL
-            dxList = it
-        }
-        list.removeAllViews()
-        fun addCard(v: View) {
-            val lp = LinearLayout.LayoutParams(MATCH, dp(200))
-            lp.setMargins(0, dp(6), 0, dp(6))
-            list.addView(v, lp)
-        }
-        if (installed("com.google.android.youtube")) {
-            addCard(detoxCard("YouTube Shorts", "com.google.android.youtube", Store.detoxShorts(this), null, { igDbgMenu("com.google.android.youtube") }) {
-                Store.setDetoxShorts(this, !Store.detoxShorts(this))
-                render()
-                updateLeft()
-            })
-        }
-        if (installed("com.instagram.android")) {
-            addCard(detoxCard("Instagram Reels", "com.instagram.android", Store.detoxReels(this), null, { igDbgMenu("com.instagram.android") }) {
-                Store.setDetoxReels(this, !Store.detoxReels(this))
-                render()
-                updateLeft()
-            })
-        }
-        val on = Store.detoxAppsOn(this)
-        val full = Store.detoxFull(this)
-        for (pkg in Store.detoxApps(this).sortedBy { appLabel(it).lowercase() }) {
-            val sub = when {
-                pkg !in on -> "ALLOWED"
-                pkg in full -> "FULL BLOCK"
-                else -> "REELS ONLY"
-            }
-            addCard(detoxCard(appLabel(pkg), pkg, pkg in on, sub, { detoxAppMenu(pkg) }) {
-                Store.setDetoxAppOn(this, pkg, pkg !in Store.detoxAppsOn(this))
-                render()
-                updateLeft()
-            })
-        }
-        (sv.parent as? android.view.ViewGroup)?.removeView(sv)
-        if (list.parent == null) sv.addView(list, FrameLayout.LayoutParams(MATCH, WRAP))
-        sv.fit()
-        val panel = LinearLayout(this)
-        panel.orientation = LinearLayout.VERTICAL
-        panel.background = rounded(C_DXPANEL, 28)
-        panel.setPadding(dp(8), dp(4), dp(8), dp(4))
-        panel.addView(sv, LinearLayout.LayoutParams(MATCH, MATCH))
-        col.addView(panel, LinearLayout.LayoutParams(MATCH, 0, 1f))
-
-        // Add Apps: tap ya right slide dono
-        val addRow = FrameLayout(this)
-        addRow.background = rounded(C_DXPANEL, 26)
-        val inner = LinearLayout(this)
-        inner.orientation = LinearLayout.HORIZONTAL
-        inner.gravity = Gravity.CENTER_VERTICAL
-        inner.setPadding(dp(12), dp(8), dp(18), dp(8))
-        val plus = IconView(this, IconView.PLUS)
-        plus.tint = C_TXT
-        plus.setPadding(dp(14), dp(14), dp(14), dp(14))
-        plus.background = rounded(Color.parseColor("#E0DAD9"), 16)
-        inner.addView(plus, LinearLayout.LayoutParams(dp(56), dp(56)))
-        val at = TextView(this)
-        at.text = "Add Apps"
-        at.textSize = 21f
-        at.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        at.setTextColor(C_TXT)
-        at.setPadding(dp(18), 0, 0, 0)
-        inner.addView(at, LinearLayout.LayoutParams(0, WRAP, 1f))
-        val ch = IconView(this, IconView.CHEVRON)
-        ch.tint = C_DIMTXT
-        inner.addView(ch, LinearLayout.LayoutParams(dp(24), dp(24)))
-        addRow.addView(inner, FrameLayout.LayoutParams(MATCH, MATCH))
-        var downX = 0f
-        var moved = false
-        addRow.setOnTouchListener { _, ev ->
-            when (ev.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = ev.rawX
-                    moved = false
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = ev.rawX - downX
-                    if (dx > dp(8)) {
-                        moved = true
-                        plus.translationX = dx.coerceIn(0f, (addRow.width - plus.width - dp(30)).toFloat())
+        when (stMode) {
+            0 -> {
+                val c = stCal.clone() as Calendar
+                val dow = (c.get(Calendar.DAY_OF_WEEK) + 5) % 7   // Mon = 0
+                c.add(Calendar.DAY_OF_YEAR, -dow)
+                vals = IntArray(7)
+                val starts = LongArray(7)
+                for (i in 0 until 7) {
+                    val d = c.clone() as Calendar
+                    d.add(Calendar.DAY_OF_YEAR, i)
+                    d.set(Calendar.HOUR_OF_DAY, 0)
+                    d.set(Calendar.MINUTE, 0)
+                    d.set(Calendar.SECOND, 0)
+                    d.set(Calendar.MILLISECOND, 0)
+                    starts[i] = d.timeInMillis
+                    if (d.timeInMillis > nowMs) {
+                        if (future == Int.MAX_VALUE) future = i
+                    } else {
+                        vals[i] = Store.dayMinutes(this, d.get(Calendar.YEAR), d.get(Calendar.MONTH), d.get(Calendar.DAY_OF_MONTH)).toInt()
                     }
                 }
-                MotionEvent.ACTION_UP -> {
-                    val dx = ev.rawX - downX
-                    val doIt = if (moved) dx > addRow.width * 0.4f else true
-                    plus.animate().translationX(0f).setDuration(200).start()
-                    if (doIt) pickDetoxApp()
+                labels = arrayOf("M", "T", "W", "T", "F", "S", "S")
+                sel = dow
+                pick = { i ->
+                    val cp = Calendar.getInstance()
+                    cp.timeInMillis = starts[i]
+                    stCal = cp
+                    refreshStats()
                 }
-                MotionEvent.ACTION_CANCEL -> plus.animate().translationX(0f).setDuration(200).start()
-            }
-            true
-        }
-        val al = LinearLayout.LayoutParams(MATCH, dp(76))
-        al.topMargin = dp(8)
-        col.addView(addRow, al)
-
-        // info
-        val info = LinearLayout(this)
-        info.orientation = LinearLayout.HORIZONTAL
-        info.gravity = Gravity.CENTER_VERTICAL
-        info.background = rounded(C_DXPANEL, 24)
-        info.setPadding(dp(20), 0, dp(16), 0)
-        val ii = IconView(this, IconView.INFO)
-        ii.tint = C_TXT
-        info.addView(ii, LinearLayout.LayoutParams(dp(26), dp(26)))
-        val itx = TextView(this)
-        itx.text = "Only Shorts & Reels are blocked. Everything else works normally."
-        itx.textSize = 14f
-        itx.setTextColor(C_TXT)
-        itx.setPadding(dp(14), 0, 0, 0)
-        info.addView(itx, LinearLayout.LayoutParams(0, WRAP, 1f))
-        val il = LinearLayout.LayoutParams(MATCH, dp(64))
-        il.topMargin = dp(8)
-        col.addView(info, il)
-        return col
-    }
-
-    private fun igDbgMenu(pkg: String) {
-        AlertDialog.Builder(this)
-            .setTitle("Debug")
-            .setItems(arrayOf("Capture IDs (20 sec)", "Show captured IDs / last block")) { _, i ->
-                if (i == 0) {
-                    Store.dxDbgStart(this, pkg)
-                    Toast.makeText(this, "20 sec: app kholo aur wo page kholo (blocking band rahegi)", Toast.LENGTH_LONG).show()
-                } else {
-                    showCapturedIds()
-                }
-            }
-            .show()
-    }
-
-    private fun detoxAppMenu(pkg: String) {
-        val name = appLabel(pkg)
-        AlertDialog.Builder(this)
-            .setTitle(name)
-            .setItems(
-                arrayOf(
-                    "Block only Reels / Shorts",
-                    "Block whole app",
-                    "Capture IDs (20 sec)",
-                    "Show captured IDs",
-                    "Remove app"
+                rows = listOf(
+                    Pair(if (stThisPeriodWord() == "TODAY") "Today" else "Selected day", hm(stTotal())),
+                    Pair("Week Total", hm(vals.sum())),
+                    Pair("Best Day", hm(vals.maxOrNull() ?: 0))
                 )
-            ) { _, i ->
-                when (i) {
-                    0 -> {
-                        Store.setDetoxFull(this, pkg, false)
-                        render()
-                    }
-                    1 -> {
-                        Store.setDetoxFull(this, pkg, true)
-                        render()
-                    }
-                    2 -> {
-                        Store.dxDbgStart(this, pkg)
-                        Toast.makeText(this, "20 sec: ab $name kholo aur Reels/Spotlight screen pe jao", Toast.LENGTH_LONG).show()
-                    }
-                    3 -> showCapturedIds()
-                    else -> AlertDialog.Builder(this)
-                        .setTitle("Remove $name?")
-                        .setPositiveButton("Remove") { _, _ ->
-                            Store.removeDetoxApp(this, pkg)
-                            render()
-                            updateLeft()
-                        }
-                        .setNegativeButton("Cancel", null)
-                        .show()
+            }
+            1 -> {
+                val c = Calendar.getInstance()
+                c.clear()
+                c.set(y, m, 1)
+                val n = c.getActualMaximum(Calendar.DAY_OF_MONTH)
+                vals = IntArray(n) { Store.dayMinutes(this, y, m, it + 1).toInt() }
+                if (y == now.get(Calendar.YEAR) && m == now.get(Calendar.MONTH)) future = now.get(Calendar.DAY_OF_MONTH)
+                labels = Array(n) { i -> val dd = i + 1; if (dd == 1 || dd % 5 == 0) dd.toString() else "" }
+                pick = { i ->
+                    stCal = Calendar.getInstance().also { it.clear(); it.set(y, m, i + 1, 0, 0) }
+                    stMode = 0
+                    refreshStats()
+                }
+                val days = stScopeDays()
+                val best = days.maxOrNull() ?: 0
+                val avg = if (days.isEmpty()) 0 else days.sum() / days.size
+                rows = listOf(
+                    Pair("Total Focus", hm(stTotal())),
+                    Pair("Best Day", hm(best)),
+                    Pair("Avg / Day", hm(avg))
+                )
+            }
+            else -> {
+                vals = IntArray(12) { monthSum(y, it) }
+                if (y == now.get(Calendar.YEAR)) future = now.get(Calendar.MONTH) + 1
+                labels = arrayOf("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")
+                pick = { i ->
+                    stCal = Calendar.getInstance().also { it.clear(); it.set(y, i, 1) }
+                    if (y == now.get(Calendar.YEAR) && i == now.get(Calendar.MONTH)) stCal = Calendar.getInstance()
+                    stMode = 1
+                    refreshStats()
+                }
+                val upto = if (future == Int.MAX_VALUE) 12 else future
+                var best = 0
+                var sum = 0
+                for (i in 0 until upto) {
+                    sum += vals[i]
+                    if (vals[i] > best) best = vals[i]
+                }
+                rows = listOf(
+                    Pair("Total Focus", hm(stTotal())),
+                    Pair("Best Month", hm(best)),
+                    Pair("Avg / Month", hm(if (upto > 0) sum / upto else 0))
+                )
+            }
+        }
+
+        val cc = stCard()
+        cc.orientation = LinearLayout.HORIZONTAL
+        cc.setPadding(dp(14), dp(14), dp(14), dp(8))
+        val chart = BarChartView(this)
+        chart.barColor = C_ORANGE
+        chart.trackColor = stTrack()
+        chart.textColor = C_TXT
+        chart.values = vals
+        chart.labels = labels
+        chart.futureFrom = future
+        chart.selected = sel
+        chart.onPick = pick
+        cc.addView(chart, LinearLayout.LayoutParams(0, dp(170), 1.7f))
+
+        val divider = View(this)
+        divider.setBackgroundColor(stTrack())
+        val dvLp = LinearLayout.LayoutParams(dp(1), MATCH)
+        dvLp.setMargins(dp(12), dp(4), dp(12), dp(10))
+        cc.addView(divider, dvLp)
+
+        val nums = LinearLayout(this)
+        nums.orientation = LinearLayout.VERTICAL
+        nums.gravity = Gravity.CENTER_VERTICAL
+        for ((k, v) in rows) {
+            val one = LinearLayout(this)
+            one.orientation = LinearLayout.VERTICAL
+            one.addView(stText(k, 12f, C_DIMTXT), LinearLayout.LayoutParams(WRAP, WRAP))
+            one.addView(stText(v, 20f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
+            val ol = LinearLayout.LayoutParams(MATCH, WRAP)
+            ol.bottomMargin = dp(10)
+            nums.addView(one, ol)
+        }
+        cc.addView(nums, LinearLayout.LayoutParams(0, MATCH, 1f))
+        col.addView(cc, rowLp(WRAP))
+
+        // ---- Goal Completion
+        var met = 0
+        var elapsed = 0
+        var states = IntArray(0)
+        if (stMode == 2) {
+            for (mm in 0..11) {
+                val c = Calendar.getInstance()
+                c.clear()
+                c.set(y, mm, 1)
+                for (d in 1..c.getActualMaximum(Calendar.DAY_OF_MONTH)) {
+                    c.set(y, mm, d)
+                    if (c.timeInMillis > nowMs) break
+                    elapsed++
+                    if (Store.dayMinutes(this, y, mm, d) >= goal) met++
                 }
             }
-            .show()
-    }
-
-    private fun showCapturedIds() {
-        val ids = Store.dxDbgIds(this)
-        val text = if (ids.isEmpty()) "Kuch capture nahi hua. Capture IDs dabake 20 sec ke andar app kholo." else ids.joinToString("\n")
-        val tv = TextView(this)
-        tv.text = text
-        tv.textSize = 12f
-        tv.setTextIsSelectable(true)
-        tv.setPadding(dp(20), dp(10), dp(20), dp(10))
-        val sc = ScrollView(this)
-        sc.addView(tv)
-        AlertDialog.Builder(this)
-            .setTitle("Captured IDs (${ids.size})")
-            .setView(sc)
-            .setPositiveButton("Copy") { _, _ ->
-                val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                cm.setPrimaryClip(android.content.ClipData.newPlainText("ids", text))
-                Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("Close", null)
-            .show()
-    }
-
-    private fun pickDetoxApp() {
-        val have = Store.detoxApps(this)
-        val base = allApps.filter {
-            it.pkg != packageName && it.pkg !in have &&
-                it.pkg != "com.google.android.youtube" && it.pkg != "com.instagram.android"
-        }
-        var shown: List<App> = base
-        var dlg: AlertDialog? = null
-
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(12), dp(8), dp(12), 0)
-        val search = EditText(this)
-        search.hint = "Search app"
-        search.isSingleLine = true
-        col.addView(search)
-        val lv = ListView(this)
-        val ad = object : BaseAdapter() {
-            override fun getCount() = shown.size
-            override fun getItem(i: Int): Any = shown[i]
-            override fun getItemId(i: Int) = i.toLong()
-            override fun getView(i: Int, v: View?, parent: ViewGroup?): View {
-                val a = shown[i]
-                val row = (v as? LinearLayout) ?: LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(8), dp(6), dp(8), dp(6))
-                    addView(ImageView(this@MainActivity), LinearLayout.LayoutParams(dp(40), dp(40)))
-                    val tv = TextView(this@MainActivity)
-                    tv.textSize = 16f
-                    tv.setPadding(dp(12), 0, dp(8), 0)
-                    addView(tv, LinearLayout.LayoutParams(0, WRAP, 1f))
-                }
-                (row.getChildAt(0) as ImageView).setImageDrawable(icon(a.pkg))
-                (row.getChildAt(1) as TextView).text = a.label
-                return row
-            }
-        }
-        lv.adapter = ad
-        lv.setOnItemClickListener { _, _, i, _ ->
-            Store.addDetoxApp(this, shown[i].pkg)
-            dlg?.dismiss()
-            render()
-            updateLeft()
-        }
-        search.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) {
-                val q = s?.toString() ?: ""
-                shown = if (q.isBlank()) base else base.filter { it.label.contains(q, ignoreCase = true) }
-                ad.notifyDataSetChanged()
-            }
-            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
-            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
-        })
-        col.addView(lv, LinearLayout.LayoutParams(MATCH, dp(360)))
-        dlg = AlertDialog.Builder(this)
-            .setTitle("Add app to Detox")
-            .setView(col)
-            .setNegativeButton("Cancel", null)
-            .create()
-        dlg?.show()
-    }
-
-    // ---------- Focus (black) screen ----------
-    private var doneShown = false
-
-    private fun syncFocus() {
-        val on = Store.sessionOn(this)
-        if (on && focus == null && !doneShown) {
-            enterFocus()
-        } else if (!on && focus != null) {
-            // timer khud poora hua (until > 0) -> DONE screen; manual exit (until = 0) -> seedha wapas
-            if (Store.until(this) > 0L) showDone() else exitFocus()
-        }
-    }
-
-    private fun showDone() {
-        val f = focus
-        focus = null
-        f?.release()
-        Ambient.stop()
-        doneShown = true
-        val now = Calendar.getInstance()
-        val todayMin = Store.dayMinutes(this, now.get(Calendar.YEAR), now.get(Calendar.MONTH), now.get(Calendar.DAY_OF_MONTH)).toInt()
-        val dow = (now.get(Calendar.DAY_OF_WEEK) + 5) % 7   // Mon = 0 ... Sun = 6
-        val week = IntArray(7) { i ->
-            val c = now.clone() as Calendar
-            c.add(Calendar.DAY_OF_YEAR, i - dow)
-            Store.dayMinutes(this, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).toInt()
-        }
-        val ds = DoneScreen(this, Store.sessionMinutes(this), todayMin, stStreak(), week, dow) {
-            doneShown = false
-            Store.stopSession(this)
-            exitFocus()
-        }
-        val lp = window.attributes
-        lp.screenBrightness = 0.3f
-        window.attributes = lp
-        window.decorView.systemUiVisibility = 0
-        setContentView(ds.view)
-    }
-
-    override fun onUserInteraction() {
-        super.onUserInteraction()
-        focus?.poke()
-    }
-
-    private fun enterFocus() {
-        val f = FocusScreen(this) { syncFocus() }
-        focus = f
-        window.statusBarColor = Color.BLACK
-        window.navigationBarColor = Color.BLACK
-        window.decorView.systemUiVisibility = 0
-        val lp = window.attributes
-        lp.screenBrightness = 0.08f
-        window.attributes = lp
-        setContentView(f.view)
-        f.update()
-    }
-
-    private fun exitFocus() {
-        focus?.release()
-        focus = null
-        Ambient.stop()
-        val lp = window.attributes
-        lp.screenBrightness = -1f
-        window.attributes = lp
-        window.statusBarColor = origStatus
-        window.navigationBarColor = origNav
-        window.decorView.systemUiVisibility = origUi
-        setContentView(normalRoot)
-        lastRunning = Store.active(this)
-        render()
-        updateLeft()
-        styleRail()
-    }
-
-    // ---------- Lifecycle ----------
-    private val tick = object : Runnable {
-        override fun run() {
-            syncFocus()
-            Notif.syncSession(this@MainActivity)
-            val f = focus
-            if (f != null) {
-                f.update()
-            } else {
-                val r = Store.active(this@MainActivity)
-                if (r != lastRunning) {
-                    lastRunning = r
-                    render()
-                }
-                updateLeft()
-            }
-            ui.postDelayed(this, 1000)
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        Notif.cancelSetup(this)
-        Notif.syncSession(this)
-        lastRunning = Store.active(this)
-        render()
-        updateLeft()
-        styleRail()
-        syncFocus()
-        ui.removeCallbacks(tick)
-        ui.postDelayed(tick, 1000)
-    }
-
-    override fun onDestroy() {
-        Ambient.stop()
-        super.onDestroy()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        if (!accEnabled()) Notif.showAccessibilityNeeded(this)
-        ui.removeCallbacks(tick)
-    }
-}
+        } else {
+            val c = Calendar.getInstance()
+            c.clear()
+            c.set(y, m, 1)
+            val n = c.getActualMaximum(Calendar.DAY_OF_MONTH)
+            states = IntArray(n)
+            for (d in 1..n) {
+                c.set(y, m, d)
+                if (c.timeInMillis > nowMs) {
+                    states[d - 1] = 2
+                } else {
+                    e
