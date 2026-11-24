@@ -8,12 +8,20 @@ import android.graphics.Typeface
 import android.view.MotionEvent
 import android.view.View
 
-/** Stats page ka bar chart: har slot ek din / mahina. Bar par tap = wo din/mahina chuno. */
+/**
+ * Stats page ka bar chart: har slot ek din / mahina. Bar par tap = wo din/mahina chuno.
+ * - label mein "\n" ho to 2 line (upar din ka naam, neeche taareekh).
+ * - thin = true: month chart ke liye patli saaf bars (poori height ki track-lines nahi).
+ * - selText: chuni hui bar ke upar chhota text (taareekh + minutes).
+ */
 class BarChartView(ctx: Context) : View(ctx) {
     var values: IntArray = IntArray(0)
     var labels: Array<String> = emptyArray()
     var selected = -1
+    var todayIdx = -1
     var futureFrom = Int.MAX_VALUE
+    var thin = false
+    var selText = ""
     var barColor = 0xFFFF6A0D.toInt()
     var trackColor = 0x14000000
     var textColor = 0xFF3E3A39.toInt()
@@ -29,49 +37,81 @@ class BarChartView(ctx: Context) : View(ctx) {
         if (n == 0) return
         val w = width.toFloat()
         val h = height.toFloat()
-        val labelH = dens * 22f
-        val top = dens * 4f
+        val twoLine = labels.any { it.contains('\n') }
+        val labelH = dens * (if (twoLine) 36f else 22f)
+        val top = dens * (if (selText.isNotEmpty()) 20f else 4f)
         val barsH = h - labelH - top
         if (barsH <= 0f) return
         val slot = w / n
-        val bw = minOf(slot * 0.62f, dens * 38f)
+        val bw = if (thin) minOf(slot * 0.55f, dens * 9f) else minOf(slot * 0.62f, dens * 34f)
         val r = minOf(bw / 2f, dens * 8f)
         var mx = 1
         for (v in values) if (v > mx) mx = v
 
         paint.textAlign = Paint.Align.CENTER
-        paint.textSize = dens * 11f
         for (i in 0 until n) {
             val cx = slot * i + slot / 2f
             val future = i >= futureFrom
-            // track (poori height ka halka bar)
-            paint.style = Paint.Style.FILL
-            paint.color = trackColor
-            if (future) paint.alpha = (paint.alpha * 0.5f).toInt()
-            rect.set(cx - bw / 2f, top, cx + bw / 2f, top + barsH)
-            canvas.drawRoundRect(rect, r, r, paint)
-            // fill
             val v = values[i]
-            if (v > 0 && !future) {
-                var fh = barsH * v / mx
-                if (fh < dens * 8f) fh = dens * 8f
-                paint.color = barColor
-                paint.alpha = if (selected < 0 || selected == i) 255 else 120
-                rect.set(cx - bw / 2f, top + barsH - fh, cx + bw / 2f, top + barsH)
+            paint.style = Paint.Style.FILL
+            if (!thin) {
+                // track (poori height ka halka bar)
+                paint.color = trackColor
+                paint.alpha = if (future) (Color_a(trackColor) * 0.5f).toInt() else Color_a(trackColor)
+                rect.set(cx - bw / 2f, top, cx + bw / 2f, top + barsH)
                 canvas.drawRoundRect(rect, r, r, paint)
             }
-            // label
+            if (v > 0 && !future) {
+                var fh = barsH * v / mx
+                if (fh < dens * (if (thin) 6f else 8f)) fh = dens * (if (thin) 6f else 8f)
+                paint.color = barColor
+                paint.alpha = if (selected < 0 || selected == i) 255 else 130
+                rect.set(cx - bw / 2f, top + barsH - fh, cx + bw / 2f, top + barsH)
+                canvas.drawRoundRect(rect, r, r, paint)
+            } else if (thin) {
+                // khali din: chhota sa dibba (aage ka din aur halka)
+                paint.color = trackColor
+                paint.alpha = if (future) (Color_a(trackColor) * 0.5f).toInt() else Color_a(trackColor)
+                val sh = dens * 4f
+                rect.set(cx - bw / 2f, top + barsH - sh, cx + bw / 2f, top + barsH)
+                canvas.drawRoundRect(rect, bw / 2f, bw / 2f, paint)
+            }
+            // label (1 ya 2 line)
             val lb = labels.getOrNull(i) ?: ""
             if (lb.isNotEmpty()) {
-                paint.color = textColor
-                paint.alpha = if (selected == i) 255 else 150
-                paint.typeface = if (selected == i) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-                canvas.drawText(lb, cx, h - dens * 5f, paint)
+                val isSel = selected == i
+                val isToday = todayIdx == i
+                val parts = lb.split('\n')
+                paint.color = if (isToday) barColor else textColor
+                paint.alpha = if (isSel || isToday) 255 else 150
+                paint.typeface = if (isSel || isToday) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                val base = h - dens * 5f
+                if (parts.size >= 2) {
+                    paint.textSize = dens * 10f
+                    canvas.drawText(parts[0], cx, base - dens * 15f, paint)
+                    paint.textSize = dens * 13f
+                    canvas.drawText(parts[1], cx, base, paint)
+                } else {
+                    paint.textSize = dens * 11f
+                    canvas.drawText(lb, cx, base, paint)
+                }
             }
+        }
+        // chuni hui bar ke upar taareekh + minutes
+        if (selText.isNotEmpty() && selected in 0 until n) {
+            paint.textSize = dens * 12f
+            paint.typeface = Typeface.DEFAULT_BOLD
+            paint.color = textColor
+            paint.alpha = 255
+            val tw = paint.measureText(selText)
+            val cx = (slot * selected + slot / 2f).coerceIn(tw / 2f + dens * 2f, w - tw / 2f - dens * 2f)
+            canvas.drawText(selText, cx, dens * 14f, paint)
         }
         paint.alpha = 255
         paint.typeface = Typeface.DEFAULT
     }
+
+    private fun Color_a(c: Int): Int = (c ushr 24) and 0xFF
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         val n = values.size
