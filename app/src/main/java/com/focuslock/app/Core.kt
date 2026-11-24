@@ -119,6 +119,7 @@ object Store {
             .putInt("sess_min", minutes.toInt())
             .apply()
         addMinutes(c, minutes)
+        addSession(c)
     }
     fun stopSession(c: Context) { p(c).edit().putLong("until", 0L).apply() }
 
@@ -195,6 +196,15 @@ object Store {
         p(c).edit().putLong(k, p(c).getLong(k, 0L) + minutes).apply()
     }
     fun dayMinutes(c: Context, y: Int, m: Int, d: Int): Long = p(c).getLong(dayKey(y, m, d), 0L)
+
+    // Din ki kitni sessions start hui (stats ke liye)
+    private fun sesKey(y: Int, m: Int, d: Int) = String.format("ses_%04d%02d%02d", y, m + 1, d)
+    fun addSession(c: Context) {
+        val cal = Calendar.getInstance()
+        val k = sesKey(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH))
+        p(c).edit().putInt(k, p(c).getInt(k, 0) + 1).apply()
+    }
+    fun daySessions(c: Context, y: Int, m: Int, d: Int): Int = p(c).getInt(sesKey(y, m, d), 0)
 
     fun anyRoutineOn(c: Context) = (0..2).any { rtOn(c, it) }
 
