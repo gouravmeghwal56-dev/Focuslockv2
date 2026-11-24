@@ -1735,18 +1735,7 @@ class MainActivity : Activity() {
         return out
     }
 
-    fun stStreak(): Int {
-        val c = Calendar.getInstance()
-        if (Store.dayMinutes(this, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)) <= 0L) {
-            c.add(Calendar.DAY_OF_YEAR, -1)   // aaj abhi 0 hai to kal se gino
-        }
-        var n = 0
-        while (n < 3650 && Store.dayMinutes(this, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)) > 0L) {
-            n++
-            c.add(Calendar.DAY_OF_YEAR, -1)
-        }
-        return n
-    }
+    fun stStreak(): Int = stStreakInfo().streak
 
     fun stShift(dir: Int) {
         val c = stCal.clone() as Calendar
