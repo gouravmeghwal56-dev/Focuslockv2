@@ -868,17 +868,17 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         return openDlgs.any { now - (dlgAt[it] ?: now) < 60_000L }
     }
 
-    // TEMP DIAGNOSTIC: dim kyun nahi ho raha ye Toast me dikhata hai. Theek hone ke baad false kar dena.
+    // TEMP DIAGNOSTIC: header ke left me chhota text dikhata hai ki dim kyun nahi ho raha. Theek hone ke baad false kar dena.
     private val DIM_DEBUG = true
-    private var dbgAt = 0L
-    private fun dimDebug(now: Long, remSec: Long) {
-        if (!DIM_DEBUG || now - dbgAt < 6_000L) return
-        dbgAt = now
-        Toast.makeText(
-            act,
-            "dim? dlg=" + openDlgs.size + " pass=" + (now < Pass.settingsUntil) + " idle=" + (now - lastTouch) + "ms rem=" + remSec + "s",
-            Toast.LENGTH_SHORT
-        ).show()
+    private var dbgTv: TextView? = null
+    private var lastPokeAt = 0L
+    private var pokeCount = 0
+    private fun dimDebug(now: Long) {
+        if (!DIM_DEBUG) return
+        val rem = (Store.until(act) - now) / 1000L
+        dbgTv?.text = "touches=" + pokeCount + " lastTouchAgo=" + (if (lastPokeAt == 0L) "never" else ((now - lastPokeAt) / 1000L).toString() + "s") +
+            "\nidle=" + ((now - lastTouch) / 1000L) + "s dlg=" + openDlgs.size + " blocking=" + dlgBlocking(now) +
+            " pass=" + (now < Pass.settingsUntil) + "\ndimmed=" + dimmed + " rem=" + rem + "s acc=" + Media.hasAccess(act)
     }
 
     // ---- dim (drift) mode: kuch der touch na ho to screen dim + dheere hilti rehti hai ----
@@ -917,9 +917,9 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
                 } else {
                     val remSec = ((Store.until(act) - now) / 1000L)
                     if (remSec > 0L && now - lastTouch >= IDLE_MS) enterDim()
-                    else if (now - lastTouch >= IDLE_MS) dimDebug(now, remSec)
                 }
             }
+            dimDebug(now)
             driftHandler.postDelayed(this, 500L)
         }
     }
@@ -948,6 +948,8 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     /** Activity.onUserInteraction se call hota hai. */
     fun poke() {
         lastTouch = System.currentTimeMillis()
+        lastPokeAt = lastTouch
+        pokeCount++
         startIdle()
         if (dimmed) exitDim()
     }
@@ -1202,6 +1204,14 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         val header = FrameLayout(act)
         headerV = header
         header.addView(title, FrameLayout.LayoutParams(MATCH, MATCH))
+        if (DIM_DEBUG) {
+            val d = TextView(act)
+            d.textSize = 9f
+            d.setTextColor(C_ORANGE)
+            d.typeface = Typeface.MONOSPACE
+            dbgTv = d
+            header.addView(d, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.START or Gravity.CENTER_VERTICAL))
+        }
         root.addView(header, LinearLayout.LayoutParams(MATCH, dp(52)))
 
         // left: big countdown (upar) + manual stopwatch (neeche)
