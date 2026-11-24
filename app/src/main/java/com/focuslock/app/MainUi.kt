@@ -544,9 +544,9 @@ fun MainActivity.startChallenge(steps: List<Int>, custom: Boolean = false) {
 fun MainActivity.customChallengeDialog() {
     val et = EditText(this)
     et.inputType = InputType.TYPE_CLASS_TEXT
-    et.hint = "Jaise 10  ya  5, 15, 40"
+    et.hint = "e.g. 10  or  5, 15, 40"
     val note = TextView(this)
-    note.text = "Apne din likho (1 - 365). Ek se zyada likho to ek khatam hote hi agla apne aap chalu ho jayega, gine hue din wahi rahenge."
+    note.text = "Enter days (1 - 365). Add more than one and they run back to back."
     note.textSize = 13f
     val box = LinearLayout(this)
     box.orientation = LinearLayout.VERTICAL
@@ -561,7 +561,7 @@ fun MainActivity.customChallengeDialog() {
                 .mapNotNull { it.trim().toIntOrNull() }
                 .filter { it in 1..365 }
                 .distinct().sorted().take(8)
-            if (l.isEmpty()) toast("1 se 365 ke beech din likho") else startChallenge(l, true)
+            if (l.isEmpty()) toast("Enter days between 1 and 365") else startChallenge(l, true)
         }
         .setNegativeButton("Cancel", null)
         .show()
@@ -574,7 +574,7 @@ fun MainActivity.challengeDialog() {
     for (d in CH_LEVELS) items.add(chLevelName(d) + "  \u00B7  " + d + " days")
     items.add("Daily goal...")
     AlertDialog.Builder(this)
-        .setTitle("Challenge (aaj se shuru)")
+        .setTitle("Challenge (starts today)")
         .setItems(items.toTypedArray()) { _, i ->
             when {
                 i == 0 -> customChallengeDialog()
@@ -618,13 +618,16 @@ fun MainActivity.statsPage(): View {
 
     fun rowLp(h: Int): LinearLayout.LayoutParams {
         val l = LinearLayout.LayoutParams(MATCH, h)
-        l.setMargins(0, dp(10), 0, 0)
+        l.setMargins(0, dp(16), 0, 0)
         return l
     }
 
     val dm = resources.displayMetrics
     val wide = dm.widthPixels / dm.density >= 600f
     val orangeSoft = (C_ORANGE and 0x00FFFFFF) or (0x26 shl 24)
+
+    // Bade screen par saare cards patle (screen ka 6% dono side se kam) -- isse badal sakte ho
+    val side = if (wide) (dm.widthPixels * 0.06f).toInt() else 0
 
     val now = Calendar.getInstance()
     val nowMs = now.timeInMillis
@@ -643,6 +646,13 @@ fun MainActivity.statsPage(): View {
     sub.gravity = Gravity.CENTER
     centerOnScreen(sub)
     col.addView(sub, LinearLayout.LayoutParams(MATCH, WRAP))
+
+    // ---- body: saare cards isme (patle + screen ke beech me)
+    val body = LinearLayout(this)
+    body.orientation = LinearLayout.VERTICAL
+    body.setPadding(side, 0, side, 0)
+    col.addView(body, LinearLayout.LayoutParams(MATCH, WRAP))
+    if (wide) centerOnScreen(body)
 
     // ================= Daily Focus Goal + Streak =================
     val top = LinearLayout(this)
@@ -691,9 +701,10 @@ fun MainActivity.statsPage(): View {
     gc.addView(pr, prLp)
 
     val sc = stCard()
+    sc.gravity = Gravity.CENTER_HORIZONTAL
     val sHead = LinearLayout(this)
     sHead.orientation = LinearLayout.HORIZONTAL
-    sHead.gravity = Gravity.CENTER_VERTICAL
+    sHead.gravity = Gravity.CENTER
     sHead.addView(FlameView(this, streak > 0), LinearLayout.LayoutParams(dp(26), dp(34)))
     val sTitle = stText("Streak", 15f, C_TXT, true)
     sTitle.setPadding(dp(8), 0, 0, 0)
@@ -706,11 +717,12 @@ fun MainActivity.statsPage(): View {
         LinearLayout.LayoutParams(WRAP, WRAP)
     )
 
+    // dono box ke beech gap
     val gl = LinearLayout.LayoutParams(0, MATCH, 1.7f)
-    gl.setMargins(0, 0, dp(8), 0)
+    gl.setMargins(0, 0, dp(18), 0)
     top.addView(gc, gl)
     top.addView(sc, LinearLayout.LayoutParams(0, MATCH, 1f))
-    col.addView(top, rowLp(WRAP).also { it.topMargin = dp(14) })
+    body.addView(top, rowLp(WRAP).also { it.topMargin = dp(16) })
 
     // ================= < Day | Month | Year > =================
     val probe = stCal.clone() as Calendar
@@ -751,7 +763,8 @@ fun MainActivity.statsPage(): View {
     next.alpha = if (probe.timeInMillis > nowMs) 0.3f else 1f
     next.setOnClickListener { stShift(1) }
     segRow.addView(next, LinearLayout.LayoutParams(WRAP, WRAP))
-    col.addView(segRow, rowLp(WRAP))
+    // thoda niche (upar zyada gap) + beech me
+    body.addView(segRow, rowLp(WRAP).also { it.topMargin = dp(26) })
 
     // ================= chart card =================
     val y = stCal.get(Calendar.YEAR)
@@ -932,7 +945,7 @@ fun MainActivity.statsPage(): View {
         cc.addView(dv, dvLp)
         cc.addView(rowsBox, LinearLayout.LayoutParams(MATCH, WRAP))
     }
-    col.addView(cc, rowLp(WRAP))
+    body.addView(cc, rowLp(WRAP))
 
     // ================= Goal Completion (custom goal button ke saath) =================
     var met = 0
@@ -1091,12 +1104,12 @@ fun MainActivity.statsPage(): View {
         barLp.topMargin = dp(10)
         gcard.addView(gBar, barLp)
     }
-    col.addView(gcard, rowLp(WRAP))
+    body.addView(gcard, rowLp(WRAP))
 
     val foot = stText("Minutes are counted when a timer starts", 11f, C_DIMTXT)
     foot.gravity = Gravity.CENTER
     val fLp = rowLp(WRAP)
-    fLp.topMargin = dp(12)
-    col.addView(foot, fLp)
+    fLp.topMargin = dp(14)
+    body.addView(foot, fLp)
     return sv
 }
