@@ -853,11 +853,32 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
 
     // Hamara dialog khula ho tab dim ka timer rukta hai (music app / panel upar ho to nahi rukta)
     private val openDlgs = ArrayList<AlertDialog>()
+    private val dlgAt = HashMap<AlertDialog, Long>()
     private fun showTracked(b: AlertDialog.Builder) {
         val d = b.create()
         openDlgs.add(d)
-        d.setOnDismissListener { openDlgs.remove(d) }
+        dlgAt[d] = System.currentTimeMillis()
+        d.setOnDismissListener { openDlgs.remove(d); dlgAt.remove(d) }
         d.show()
+    }
+
+    // Dialog sirf 60 sec tak dim rokta hai (koi atka hua dialog dim ko hamesha ke liye na roke)
+    private fun dlgBlocking(now: Long): Boolean {
+        openDlgs.removeAll { !it.isShowing }
+        return openDlgs.any { now - (dlgAt[it] ?: now) < 60_000L }
+    }
+
+    // TEMP DIAGNOSTIC: dim kyun nahi ho raha ye Toast me dikhata hai. Theek hone ke baad false kar dena.
+    private val DIM_DEBUG = true
+    private var dbgAt = 0L
+    private fun dimDebug(now: Long, remSec: Long) {
+        if (!DIM_DEBUG || now - dbgAt < 6_000L) return
+        dbgAt = now
+        Toast.makeText(
+            act,
+            "dim? dlg=" + openDlgs.size + " pass=" + (now < Pass.settingsUntil) + " idle=" + (now - lastTouch) + "ms rem=" + remSec + "s",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     // ---- dim (drift) mode: kuch der touch na ho to screen dim + dheere hilti rehti hai ----
@@ -891,12 +912,12 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
             if (!idleOn) return
             val now = System.currentTimeMillis()
             if (!dimmed) {
-                openDlgs.removeAll { !it.isShowing }
-                if (openDlgs.isNotEmpty() || now < Pass.settingsUntil) {
+                if (dlgBlocking(now) || now < Pass.settingsUntil) {
                     lastTouch = now
                 } else {
                     val remSec = ((Store.until(act) - now) / 1000L)
                     if (remSec > 0L && now - lastTouch >= IDLE_MS) enterDim()
+                    else if (now - lastTouch >= IDLE_MS) dimDebug(now, remSec)
                 }
             }
             driftHandler.postDelayed(this, 500L)
@@ -1460,8 +1481,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
 
         // Dialog khula ho / doosri screen (Settings) upar ho / Notification pass chal raha ho to dim ka timer rok do
         // dialog dikh raha ho tabhi dim rokna (atka hua dialog dim ko hamesha ke liye na roke)
-        openDlgs.removeAll { !it.isShowing }
-        if (openDlgs.isNotEmpty() || now < Pass.settingsUntil) lastTouch = now
+        if (dlgBlocking(now) || now < Pass.settingsUntil) lastTouch = now
         if (!dimmed && remSec > 0L && now - lastTouch > IDLE_MS) enterDim()
         // dim mode mein brightness koi aur reset kare (music app wagairah) to wapas 0.01 kar do
         if (dimmed && act.window.attributes.screenBrightness != 0.01f) setBrightness(0.01f)
