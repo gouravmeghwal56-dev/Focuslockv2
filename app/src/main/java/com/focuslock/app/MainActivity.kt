@@ -2157,6 +2157,33 @@ class MainActivity : Activity() {
         return best
     }
 
+    /** Scope (din/mahina/saal) ki sessions aur un dino ke minutes (jinki sessions count hui). */
+    private fun stSessions(): Pair<Int, Int> {
+        val y = stCal.get(Calendar.YEAR)
+        val mo = stCal.get(Calendar.MONTH)
+        var ses = 0
+        var mins = 0
+        fun day(yy: Int, mm: Int, dd: Int) {
+            val s = Store.daySessions(this, yy, mm, dd)
+            if (s > 0) {
+                ses += s
+                mins += Store.dayMinutes(this, yy, mm, dd).toInt()
+            }
+        }
+        if (stMode == 0) {
+            day(y, mo, stCal.get(Calendar.DAY_OF_MONTH))
+        } else {
+            val months = if (stMode == 2) 0..11 else mo..mo
+            for (mm in months) {
+                val c = Calendar.getInstance()
+                c.clear()
+                c.set(y, mm, 1)
+                for (dd in 1..c.getActualMaximum(Calendar.DAY_OF_MONTH)) day(y, mm, dd)
+            }
+        }
+        return Pair(ses, mins)
+    }
+
     private fun stText(s: CharSequence, sp: Float, color: Int, bold: Boolean = false): TextView {
         val t = TextView(this)
         t.text = s
@@ -2430,6 +2457,12 @@ class MainActivity : Activity() {
             }
         }
 
+        val sp = stSessions()
+        rows = rows + listOf(
+            Pair("Sessions", sp.first.toString()),
+            Pair("Avg / Session", if (sp.first > 0) hm(sp.second / sp.first) else "\u2014")
+        )
+
         val cc = stCard()
         cc.orientation = LinearLayout.HORIZONTAL
         cc.setPadding(dp(14), dp(14), dp(14), dp(8))
@@ -2442,7 +2475,7 @@ class MainActivity : Activity() {
         chart.futureFrom = future
         chart.selected = sel
         chart.onPick = pick
-        cc.addView(chart, LinearLayout.LayoutParams(0, dp(170), 1.7f))
+        cc.addView(chart, LinearLayout.LayoutParams(0, dp(230), 1.6f))
 
         val divider = View(this)
         divider.setBackgroundColor(stTrack())
@@ -2457,39 +2490,5 @@ class MainActivity : Activity() {
             val one = LinearLayout(this)
             one.orientation = LinearLayout.VERTICAL
             one.addView(stText(k, 12f, C_DIMTXT), LinearLayout.LayoutParams(WRAP, WRAP))
-            one.addView(stText(v, 20f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
-            val ol = LinearLayout.LayoutParams(MATCH, WRAP)
-            ol.bottomMargin = dp(10)
-            nums.addView(one, ol)
-        }
-        cc.addView(nums, LinearLayout.LayoutParams(0, MATCH, 1f))
-        col.addView(cc, rowLp(WRAP))
-
-        // ---- Goal Completion
-        var met = 0
-        var elapsed = 0
-        var states = IntArray(0)
-        if (stMode == 2) {
-            for (mm in 0..11) {
-                val c = Calendar.getInstance()
-                c.clear()
-                c.set(y, mm, 1)
-                for (d in 1..c.getActualMaximum(Calendar.DAY_OF_MONTH)) {
-                    c.set(y, mm, d)
-                    if (c.timeInMillis > nowMs) break
-                    elapsed++
-                    if (Store.dayMinutes(this, y, mm, d) >= goal) met++
-                }
-            }
-        } else {
-            val c = Calendar.getInstance()
-            c.clear()
-            c.set(y, m, 1)
-            val n = c.getActualMaximum(Calendar.DAY_OF_MONTH)
-            states = IntArray(n)
-            for (d in 1..n) {
-                c.set(y, m, d)
-                if (c.timeInMillis > nowMs) {
-                    states[d - 1] = 2
-                } else {
-                    e
+            one.addView(stText(v, 18f, C_TXT, true), LinearLayout.LayoutParams(WRAP, WRAP))
+            val ol = LinearLayout.La
