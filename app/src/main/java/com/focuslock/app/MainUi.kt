@@ -596,6 +596,17 @@ fun MainActivity.stIcon(kind: Int, tint: Int): LineIconView {
     return v
 }
 
+/** View ko poori screen ke beech me laata hai (rail ki wajah se content thoda sarka hota hai). */
+fun MainActivity.centerOnScreen(v: View) {
+    v.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        val loc = IntArray(2)
+        v.getLocationOnScreen(loc)
+        val cx = loc[0] - v.translationX + v.width / 2f
+        val want = resources.displayMetrics.widthPixels / 2f
+        if (Math.abs(want - cx) > 1f) v.translationX = want - cx
+    }
+}
+
 fun MainActivity.statsPage(): View {
     val sv = ScrollView(this)
     sv.isVerticalScrollBarEnabled = false
@@ -626,9 +637,11 @@ fun MainActivity.statsPage(): View {
     // ---- title
     val title = stText("Stats", 26f, C_TXT, true)
     title.gravity = Gravity.CENTER
+    centerOnScreen(title)
     col.addView(title, LinearLayout.LayoutParams(MATCH, WRAP))
     val sub = stText("Your focus progress at a glance", 13f, C_DIMTXT)
     sub.gravity = Gravity.CENTER
+    centerOnScreen(sub)
     col.addView(sub, LinearLayout.LayoutParams(MATCH, WRAP))
 
     // ================= Daily Focus Goal + Streak =================
@@ -750,6 +763,9 @@ fun MainActivity.statsPage(): View {
     var pick: ((Int) -> Unit)? = null
     var chartTitle = ""
     var headerTotal = 0
+    var todayIdx = -1
+    var selText = ""
+    var thin = false
 
     when (stMode) {
         0 -> {
@@ -772,8 +788,15 @@ fun MainActivity.statsPage(): View {
                     vals[i] = Store.dayMinutes(this, d.get(Calendar.YEAR), d.get(Calendar.MONTH), d.get(Calendar.DAY_OF_MONTH)).toInt()
                 }
             }
-            labels = arrayOf("M", "T", "W", "T", "F", "S", "S")
+            val dn = arrayOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+            labels = Array(7) { i ->
+                val dc = Calendar.getInstance()
+                dc.timeInMillis = starts[i]
+                dn[i] + "\n" + dc.get(Calendar.DAY_OF_MONTH)
+            }
+            for (i in 0 until 7) if (nowMs >= starts[i] && nowMs < starts[i] + 86400000L) todayIdx = i
             sel = dow
+            if (dow < future) selText = SimpleDateFormat("EEE d MMM", Locale.getDefault()).format(Date(starts[dow])) + "  \u00B7  " + hm(vals[dow])
             pick = { i ->
                 val cp = Calendar.getInstance()
                 cp.timeInMillis = starts[i]
@@ -781,8 +804,14 @@ fun MainActivity.statsPage(): View {
                 refreshStats()
             }
             val weekMs = 7L * 24L * 3600L * 1000L
-            chartTitle = if (nowMs >= starts[0] && nowMs < starts[0] + weekMs) "This Week"
-            else SimpleDateFormat("'Week of' d MMM", Locale.getDefault()).format(Date(starts[0]))
+            val sCal = Calendar.getInstance()
+            sCal.timeInMillis = starts[0]
+            val eCal = Calendar.getInstance()
+            eCal.timeInMillis = starts[6]
+            val range = if (sCal.get(Calendar.MONTH) == eCal.get(Calendar.MONTH))
+                sCal.get(Calendar.DAY_OF_MONTH).toString() + " \u2013 " + SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(starts[6]))
+            else SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(starts[0])) + " \u2013 " + SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(starts[6]))
+            chartTitle = (if (nowMs >= starts[0] && nowMs < starts[0] + weekMs) "This Week  \u00B7  " else "") + range
             headerTotal = vals.sum()
         }
         1 -> {
@@ -793,6 +822,12 @@ fun MainActivity.statsPage(): View {
             vals = IntArray(n) { Store.dayMinutes(this, y, m, it + 1).toInt() }
             if (y == now.get(Calendar.YEAR) && m == now.get(Calendar.MONTH)) future = now.get(Calendar.DAY_OF_MONTH)
             labels = Array(n) { i -> val dd = i + 1; if (dd == 1 || dd % 5 == 0) dd.toString() else "" }
+            thin = true
+            if (y == now.get(Calendar.YEAR) && m == now.get(Calendar.MONTH)) {
+                todayIdx = now.get(Calendar.DAY_OF_MONTH) - 1
+                sel = todayIdx
+                selText = SimpleDateFormat("d MMM", Locale.getDefault()).format(now.time) + "  \u00B7  " + hm(vals[todayIdx])
+            }
             pick = { i ->
                 stCal = Calendar.getInstance().also { it.clear(); it.set(y, m, i + 1, 0, 0) }
                 stMode = 0
@@ -805,7 +840,8 @@ fun MainActivity.statsPage(): View {
         else -> {
             vals = IntArray(12) { monthSum(y, it) }
             if (y == now.get(Calendar.YEAR)) future = now.get(Calendar.MONTH) + 1
-            labels = arrayOf("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")
+            labels = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+            if (y == now.get(Calendar.YEAR)) todayIdx = now.get(Calendar.MONTH)
             pick = { i ->
                 stCal = Calendar.getInstance().also { it.clear(); it.set(y, i, 1) }
                 if (y == now.get(Calendar.YEAR) && i == now.get(Calendar.MONTH)) stCal = Calendar.getInstance()
@@ -825,6 +861,9 @@ fun MainActivity.statsPage(): View {
     chart.labels = labels
     chart.futureFrom = future
     chart.selected = sel
+    chart.todayIdx = todayIdx
+    chart.thin = thin
+    chart.selText = selText
     chart.onPick = pick
 
     val cHead = LinearLayout(this)
@@ -840,13 +879,13 @@ fun MainActivity.statsPage(): View {
     val chartCol = LinearLayout(this)
     chartCol.orientation = LinearLayout.VERTICAL
     chartCol.addView(cHead, LinearLayout.LayoutParams(MATCH, WRAP))
-    val chLp = LinearLayout.LayoutParams(MATCH, dp(if (wide) 180 else 160))
+    val chLp = LinearLayout.LayoutParams(MATCH, dp(if (wide) 132 else 140))
     chLp.topMargin = dp(10)
     chartCol.addView(chart, chLp)
 
     // right side: Total / Sessions / Avg (icon ke saath)
     val sp = stSessions()
-    val firstLbl = if (stMode == 0) (if (stThisPeriodWord() == "TODAY") "Today" else "Selected day") else "Total Focus"
+    val firstLbl = if (stMode == 0) SimpleDateFormat("EEE d MMM", Locale.getDefault()).format(stCal.time).let { if (stThisPeriodWord() == "TODAY") "Today \u00B7 $it" else it } else "Total Focus"
     val numRows = listOf(
         Triple(LineIconView.STOPWATCH, firstLbl, hm(stTotal())),
         Triple(LineIconView.LAYERS, "Sessions", sp.first.toString()),
