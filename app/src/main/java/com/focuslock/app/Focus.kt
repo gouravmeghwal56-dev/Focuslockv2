@@ -884,6 +884,32 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         }
     }
 
+    // Dim ka apna heartbeat: MainActivity ke tick par depend nahi (tick ruk jaye tab bhi dim chalega)
+    private var idleOn = false
+    private val idleRun = object : Runnable {
+        override fun run() {
+            if (!idleOn) return
+            val now = System.currentTimeMillis()
+            if (!dimmed) {
+                openDlgs.removeAll { !it.isShowing }
+                if (openDlgs.isNotEmpty() || now < Pass.settingsUntil) {
+                    lastTouch = now
+                } else {
+                    val remSec = ((Store.until(act) - now) / 1000L)
+                    if (remSec > 0L && now - lastTouch >= IDLE_MS) enterDim()
+                }
+            }
+            driftHandler.postDelayed(this, 500L)
+        }
+    }
+
+    private fun startIdle() {
+        if (idleOn) return
+        idleOn = true
+        driftHandler.removeCallbacks(idleRun)
+        driftHandler.postDelayed(idleRun, 500L)
+    }
+
     private fun outlineBg(r: Int): GradientDrawable {
         val g = GradientDrawable()
         g.setColor(Color.BLACK)
@@ -901,6 +927,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     /** Activity.onUserInteraction se call hota hai. */
     fun poke() {
         lastTouch = System.currentTimeMillis()
+        startIdle()
         if (dimmed) exitDim()
     }
 
@@ -943,7 +970,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
         clock.seams = false
         secView.color = Color.WHITE
         secView.seams = false
-        setBrightness(0.08f)
+        setBrightness(-1f)
         act.window.decorView.systemUiVisibility = 0
         update()
         clock.post { clock.dyShift = -clock.height * 0.05f }
@@ -954,6 +981,8 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     /** Focus screen band hote waqt cleanup. */
     fun release() {
         dimmed = false
+        idleOn = false
+        driftHandler.removeCallbacks(idleRun)
         driftHandler.removeCallbacks(driftRun)
         swHandler.removeCallbacks(swTick)
     }
@@ -1413,6 +1442,7 @@ class FocusScreen(private val act: Activity, private val onExit: () -> Unit) {
     }
 
     fun update() {
+        startIdle()
         val now = System.currentTimeMillis()
         val until = Store.until(act)
         val remSec = ((until - now) / 1000L).coerceAtLeast(0L)
